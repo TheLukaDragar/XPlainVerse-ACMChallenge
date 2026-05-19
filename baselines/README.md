@@ -45,6 +45,8 @@ pip install vllm
 
 **Requirements:** Python >= 3.10, PyTorch >= 2.0 with CUDA or ROCm support, transformers, accelerate, peft.
 
+**Docker (NVIDIA CUDA / Slurm Pyxis):** For one image that installs ms-swift + vLLM **and** the pinned evaluator stack from `evaluation/env/xplainverse_eval_env.txt`, see `docker/README.md` and `docker/Dockerfile`.
+
 ---
 
 ## Training Data Format

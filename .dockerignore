@@ -1,0 +1,19 @@
+# Git / tooling
+.git
+.github
+
+# Python caches
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+
+# Large local artifacts (do not bake into CI images)
+baseline_models/
+
+# Hugging Face cache trees anywhere in the repo
+**/.cache/
+
+# Optional large archives if added later
+**/*.zip
+**/*.tar.gz
