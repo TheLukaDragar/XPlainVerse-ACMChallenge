@@ -1,0 +1,453 @@
+---
+description: XPlainVerse metrics — readable reference with concrete examples
+alwaysApply: true
+---
+
+# XPlainVerse — How Scoring Works
+
+## What you submit
+
+For each image you send one JSON line:
+
+```json
+{
+  "sample_id": "000048223b6a3cdfdaa90c26",
+  "label": "fake",
+  "complex_explanation": "...",
+  "simple_explanation": "..."
+}
+```
+
+- **Task 1:** `label` is `real` or `fake`. Required, but the public evaluator does not score it yet.
+- **Task 2:** two text fields — a detailed complex explanation and a short simple one.
+
+Rows are matched by `sample_id`. You can submit all 110k val images or just a subset.
+
+---
+
+## What training/val samples look like
+
+**Fake images** get two different explanations:
+- **Complex:** long, technical, lists specific visual problems.
+- **Simple:** short, plain English, same core reason.
+
+Example (woman with puppy on her shoulder, fake):
+
+**Complex reference:**
+> The puppy's fur appears overly soft and lacks fine detail compared to the surrounding textures, and its body seems to merge unnaturally into the woman's red shirt without proper shadows or physical depth. Additionally, the woman's blonde hair near her shoulder has a blurred, smudged appearance where it overlaps with the puppy's head. On the left side, the child's green and yellow costume shows inconsistent patterns near the bottom edge, and the black container on the counter has warped, indistinct geometry.
+
+**Simple reference:**
+> The puppy looks like a little toy stuck to the woman's red shirt — its fur is too soft and its head sits on her shoulder like a sticker instead of fitting naturally into the picture.
+
+**Real images** only have one explanation. For scoring, the simple field uses the same text as the complex field.
+
+---
+
+## Complex explanation score (three parts)
+
+Final complex score per image:
+
+**30% semantic similarity + 40% entity overlap + 30% facts overlap**
+
+---
+
+### Part 1 — Semantic similarity (30%)
+
+**What it does:** Compares your complex text to the reference complex text using BERTScore. No LLM prompt — just a DeBERTa model measuring whether the sentences mean similar things.
+
+**Measured examples** (same puppy image, full reference paragraph):
+
+| What you wrote | Score |
+|----------------|-------|
+| "The dog's fur looks too smooth and blends into her shirt without real shadows." | 0.642 |
+| "The image looks fake because of AI generation." | 0.528 |
+| "The puppy looks pasted on. Hair is smudged. Costume pattern is wrong." | 0.585 |
+| Exact copy of the reference | 1.000 |
+
+**How to read this:** A good one-liner about the puppy and shirt only gets ~0.64 because the reference mentions five things (puppy, shirt, hair, costume, container). You need to cover all of them in a full paragraph, not just the main point.
+
+---
+
+### Part 2 — Entity overlap (40%) — largest weight
+
+**What it does:** Qwen3.5-4B reads explanations and pulls out **evidence objects** — the things actually used to argue fake/real (the puppy, the red shirt, the garbled text on a sign, the woman's hand, etc.). Not every noun in the sentence. Only things that carry the argument.
+
+Then it checks overlap in **both directions**, like precision and recall:
+
+1. **Reference → yours:** "Did you mention the objects the reference used as evidence?"
+2. **Yours → reference:** "Did the reference support the objects you claimed?"
+
+Each direction becomes a fraction: how many objects matched, divided by how many were extracted. Those two fractions are combined with a harmonic mean (same idea as F1).
+
+**Step 1 — Extract from ground truth**
+
+Qwen reads the reference complex explanation and outputs JSON like:
+
+```json
+{
+  "diagnostic_entities": [
+    {"entity_id": "E1", "name": "golden retriever puppy"},
+    {"entity_id": "E2", "name": "woman's red shirt"},
+    {"entity_id": "E3", "name": "woman's blonde hair"},
+    {"entity_id": "E4", "name": "child's costume"},
+    {"entity_id": "E5", "name": "black container on counter"}
+  ]
+}
+```
+
+**Step 2 — Extract from your prediction**
+
+You wrote: *"The dog's fur looks too smooth and blends into her shirt without real shadows."*
+
+Qwen extracts:
+
+```json
+{
+  "diagnostic_entities": [
+    {"entity_id": "E1", "name": "dog"},
+    {"entity_id": "E2", "name": "shirt"}
+  ]
+}
+```
+
+**Step 3 — How Qwen marks each entity present or absent (full process)**
+
+This is not keyword matching. Qwen3.5-4B reads a constructed prompt, thinks about each entity one by one, and returns a JSON list with `"present": true` or `"present": false` for every entity and every claim.
+
+---
+
+**3a. What happens before coverage**
+
+First, Qwen already ran the **extraction prompt** on the ground-truth complex explanation. That produced a JSON object stored as the reference. For the puppy image, that JSON contains five entities and five claims (see Step 1 above).
+
+Your submission complex explanation is kept as plain text. It is NOT converted to JSON for this step — Qwen compares the reference JSON against your raw paragraph.
+
+---
+
+**3b. How the coverage prompt is built**
+
+The evaluator takes the coverage prompt template and fills in two placeholders:
+
+1. `{{REFERENCE_JSON}}` — the entities and claims extracted from ground truth (only those two lists, inserted as formatted JSON)
+2. `{{CANDIDATE_EXPLANATION}}` — your full complex explanation string
+
+Qwen also receives a **system message** (separate from the user message):
+> "You are a careful semantic coverage assistant. Return JSON only."
+
+Settings: model Qwen3.5-4B, temperature 0 (deterministic), max 1024 output tokens.
+
+---
+
+**3c. What Qwen actually reads (puppy example)**
+
+The user message Qwen receives looks like this (abbreviated in the middle):
+
+```
+You are an evaluation system.
+
+Task:
+You will be given:
+1. a reference JSON containing:
+   - diagnostic_entities
+   - evidence_claims
+2. a candidate explanation
+
+Your job is to determine, for each diagnostic entity and each evidence claim
+in the reference JSON, whether it is present in the candidate explanation.
+
+This is a LENIENT SEMANTIC MATCHING task.
+Do NOT require exact wording.
+Match based on core meaning.
+
+Entity present:
+A diagnostic entity is present if the candidate explanation clearly refers to
+the same evidence-bearing thing, either directly or indirectly, even if the
+wording is different.
+
+... [full rules about what counts and what does not] ...
+
+Decision rule:
+Ask: "Would a reasonable human judge say that the candidate explanation covers
+this same evidence, even if phrased differently?"
+
+REFERENCE_JSON:
+{
+  "diagnostic_entities": [
+    {"entity_id": "E1", "name": "golden retriever puppy"},
+    {"entity_id": "E2", "name": "woman's red shirt"},
+    {"entity_id": "E3", "name": "woman's blonde hair"},
+    {"entity_id": "E4", "name": "child's costume"},
+    {"entity_id": "E5", "name": "black container on counter"}
+  ],
+  "evidence_claims": [
+    {"claim_id": "C1", "entity_id": "E1", "claim": "Puppy fur is overly soft and lacks fine detail"},
+    ...
+  ]
+}
+
+CANDIDATE_EXPLANATION:
+The dog's fur looks too smooth and blends into her shirt without real shadows.
+```
+
+Qwen must go through **every** entity in the reference JSON and **every** claim, and decide true or false for each.
+
+---
+
+**3d. What Qwen returns**
+
+Qwen generates a JSON response. For each entity it outputs four fields. Example of what it might return for the puppy case:
+
+```json
+{
+  "entity_matches": [
+    {
+      "entity_id": "E1",
+      "entity_name": "golden retriever puppy",
+      "present": true,
+      "matched_text": "The dog's fur",
+      "reason": "Candidate refers to the same animal using 'dog' and discusses its fur as evidence."
+    },
+    {
+      "entity_id": "E2",
+      "entity_name": "woman's red shirt",
+      "present": true,
+      "matched_text": "blends into her shirt",
+      "reason": "Candidate mentions the shirt as the surface the dog merges into."
+    },
+    {
+      "entity_id": "E3",
+      "entity_name": "woman's blonde hair",
+      "present": false,
+      "matched_text": "",
+      "reason": "Candidate does not mention hair or any overlap/blur at the shoulder."
+    },
+    {
+      "entity_id": "E4",
+      "entity_name": "child's costume",
+      "present": false,
+      "matched_text": "",
+      "reason": "No reference to costume or clothing patterns."
+    },
+    {
+      "entity_id": "E5",
+      "entity_name": "black container on counter",
+      "present": false,
+      "matched_text": "",
+      "reason": "Container not mentioned."
+    }
+  ],
+  "claim_matches": [
+    {
+      "claim_id": "C1",
+      "entity_id": "E1",
+      "reference_claim": "Puppy fur is overly soft and lacks fine detail",
+      "present": true,
+      "matched_text": "The dog's fur looks too smooth",
+      "reason": "Too smooth fur paraphrases overly soft / lacks detail."
+    },
+    {
+      "claim_id": "C2",
+      "entity_id": "E1",
+      "reference_claim": "Puppy body merges into shirt without shadows or depth",
+      "present": true,
+      "matched_text": "blends into her shirt without real shadows",
+      "reason": "Same merge-into-shirt and missing shadows observation."
+    },
+    {
+      "claim_id": "C3",
+      "reference_claim": "Hair is blurred/smudged where it overlaps puppy head",
+      "present": false,
+      "matched_text": "",
+      "reason": "Hair overlap issue not stated."
+    }
+  ]
+}
+```
+
+The evaluator parses this JSON. For each item in `entity_matches`, it reads the boolean field `"present"`. Same for `claim_matches`.
+
+---
+
+**3e. How present true/false is decided (the rules Qwen follows)**
+
+For **entities**, Qwen marks `present: true` when your text clearly refers to the same evidence-bearing object, even with different words:
+- "golden retriever puppy" matches "dog" — **true**
+- "woman's red shirt" matches "her shirt" — **true**
+- "woman's blonde hair" — you never mention hair — **false**
+
+For **claims**, Qwen marks `present: true` when your text conveys the same visual observation, even if merged into one sentence or simplified:
+- "fur looks too smooth" matches "fur is overly soft and lacks fine detail" — **true**
+- "blends into her shirt without real shadows" matches "merges into shirt without shadows or depth" — **true**
+- hair smudge claim — not in your text — **false**
+
+Qwen marks **false** when:
+- You only name the object but not the evidence ("there is a puppy" without fur/shadow issue)
+- You give generic criticism ("looks AI-generated") without the specific observation
+- You discuss a related but different problem
+- The match is too vague
+
+Qwen is instructed to be **lenient on wording** but **strict on evidence**. Paraphrases count. Generic fluff does not.
+
+---
+
+**3f. How the fraction is computed from Qwen's booleans**
+
+The evaluator counts Qwen's answers:
+
+```
+entity_present = number of entity_matches where present == true
+entity_total   = length of entity_matches list
+entity_coverage = entity_present / entity_total
+```
+
+For the puppy example: 2 true out of 5 entities → **entity_coverage = 0.40**
+
+Same for claims: 2 true out of 5 claims → **claim_coverage = 0.40**
+
+If Qwen extracted zero entities (empty list), coverage is defined as 0.0, not skipped.
+
+The `matched_text` and `reason` fields are for transparency inside Qwen's response — the score only uses the `present` boolean.
+
+---
+
+**3g. This runs twice per image**
+
+**First call (recall):** Reference JSON from ground truth + your complex text.
+→ "Did you cover what the reference said?"
+→ Produces `_gt_to_pred_entity` and `_gt_to_pred_fact`
+
+**Second call (precision):** Reference JSON from your text + ground-truth complex text.
+→ "Did the reference cover what you said?"
+→ Produces `_pred_to_gt_entity` and `_pred_to_gt_fact`
+
+Both calls use the **identical coverage prompt template**. Only the JSON source and candidate text swap.
+
+---
+
+**Step 4 — Check: does the reference cover your objects?**
+
+- Dog → **present** (reference talks about the puppy)
+- Shirt → **present**
+
+Score: 2 out of 2 = **1.00**
+
+**Step 5 — Combine**
+
+Entity F1 = 2 × 0.40 × 1.00 / (0.40 + 1.00) = **0.571**
+
+**Plain English:** You said nothing wrong (full credit on precision), but you only talked about 2 of 5 evidence objects (low recall). That gives ~0.57.
+
+If you mention all five objects with paraphrases ("dog" for puppy, "her top" for red shirt, etc.), both directions score near 1.0.
+
+---
+
+### Part 3 — Facts overlap (30%)
+
+**What it does:** Same process as entities, but on **evidence claims** — the specific statements about what's wrong, not just the object names.
+
+From the puppy reference, claims look like:
+
+- "Puppy fur is overly soft and lacks fine detail"
+- "Puppy body merges into shirt without shadows or depth"
+- "Hair is blurred and smudged where it overlaps the puppy's head"
+- "Costume shows inconsistent patterns at the bottom edge"
+- "Container has warped geometry compared to sharp focus elsewhere"
+
+**Same short prediction as above:**
+
+Your text covers the first two claims (soft fur, merge into shirt without shadows). It misses the hair, costume, and container claims.
+
+Reference → yours: 2/5 = 0.40  
+Yours → reference: 2/2 = 1.00  
+Facts F1 = **0.571**
+
+**Entity vs facts in plain terms:**
+- **Entity** = *what* you point at ("the puppy", "the text on the banner")
+- **Facts** = *what's wrong with it* ("fur is too smooth", "text is garbled nonsense")
+
+You need both. Saying "there's a puppy" without explaining the fur/shadow problem helps entities a little but not facts.
+
+---
+
+### The two Qwen prompts (entity + facts share these)
+
+**Extraction prompt** — Qwen reads one explanation and returns JSON:
+
+> Extract only the entities and claims that function as evidence for why the image looks fake or real. Do not extract background context or generic statements like "the image looks fake." Return diagnostic_entities and evidence_claims as JSON.
+
+Run on reference text once, on your text once.
+
+**Coverage prompt** — Qwen gets a JSON list plus a candidate explanation:
+
+> For each entity and claim in the reference JSON, decide if the candidate explanation covers the same evidence. Use lenient semantic matching — paraphrases count. Mark present=false if the candidate only names the object without the evidence, or gives vague generic criticism.
+
+Run twice per image:
+- Reference JSON + your complex text (recall check)
+- Your JSON + reference complex text (precision check)
+
+---
+
+## Simple explanation score (two parts)
+
+**70% semantic similarity + 30% simplicity**
+
+### Semantic similarity (70%)
+
+Same BERTScore as complex, but compares your **simple** text to the reference **simple** text.
+
+For fake images the reference simple is short and plain:
+> "The puppy looks like a little toy stuck to the woman's red shirt..."
+
+For real images there is no separate simple reference, so your simple text is compared to the complex reference instead.
+
+### Simplicity (30%)
+
+A separate model (SLE) scores how simple your simple explanation reads. It only looks at your text — not the reference. Higher score = simpler language.
+
+The raw score is clipped to the range -1 to 4, then rescaled to 0–1 for the final formula.
+
+**What goes wrong:** If you paste your long complex explanation into the simple field, simplicity score goes negative and destroys your simple overall score even if the meaning is right.
+
+**Good simple phrase:** "The puppy looks pasted onto her shirt like a sticker."  
+**Bad simple phrase:** (copy of the full technical complex paragraph)
+
+---
+
+## Full example — one fake image
+
+**Reference complex:** puppy fur, shirt merge, hair smudge, costume, container (five evidence points).
+
+**You submit:**
+- label: fake
+- complex: mentions puppy fur and shirt only
+- simple: "The dog looks pasted onto her shirt."
+
+| Metric | Score | Why |
+|--------|-------|-----|
+| Complex semantic | ~0.64 | Good paraphrase but missing three evidence blocks |
+| Complex entity | ~0.57 | 2 of 5 objects |
+| Complex facts | ~0.57 | 2 of 5 claims |
+| Complex overall | ~0.59 | Weighted mix |
+| Simple semantic | ~0.73 | Captures sticker/pasted idea |
+| Simple simplicity | high | Short plain sentence |
+| Simple overall | ~0.75 | |
+
+**Dataset score:** average of these per-image scores across all images you submitted.
+
+---
+
+## What to do / what to avoid
+
+**Do:**
+- Write a multi-sentence complex explanation that names every evidence object and every specific visual problem from the reference style.
+- Paraphrase freely — "dog" instead of "puppy" is fine.
+- Write the simple field in short, everyday language — one clear reason.
+- Keep label and explanations consistent.
+
+**Don't:**
+- Write "This looks AI-generated" or "artifacts are visible."
+- Submit a one-liner when the reference has four sentences of evidence.
+- Copy complex text into simple.
+- Invent objects or problems not in the image.
+
+Entity and facts overlap together are 70% of the complex score. Semantic similarity is only 30%. Listing all the right evidence beats fluent generic text.
