@@ -46,8 +46,9 @@ RUN pip install vllm
 # Video / Qwen-VL helpers (ms-swift prints a warning and some paths need these for Qwen3-VL).
 RUN pip install "qwen_vl_utils>=0.0.14" "decord>=0.6.0"
 
-# Flash Attention 2 — built from source against the vLLM-installed torch (requires nvcc from devel image).
-RUN pip install flash-attn --no-build-isolation
+# Flash Attention 2 — pre-built wheel (no compilation). Pin exact wheel that matches
+# Python 3.10 + CUDA 13.0 + PyTorch 2.11 shipped by vLLM. Source: mjun0812/flash-attention-prebuild-wheels.
+RUN pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.8.3+cu130torch2.11-cp310-cp310-linux_x86_64.whl
 
 # --- Repository tree (weights excluded via .dockerignore)
 WORKDIR /workspace/XPlainVerse-ACMChallenge
