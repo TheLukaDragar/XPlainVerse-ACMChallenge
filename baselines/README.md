@@ -47,6 +47,31 @@ pip install vllm
 
 **Docker (NVIDIA CUDA / Slurm Pyxis):** For one image that installs ms-swift + vLLM **and** the pinned evaluator stack from `evaluation/env/xplainverse_eval_env.txt`, see `docker/README.md` and `docker/Dockerfile`.
 
+### PyTorch CUDA line (bare-metal / conda / shared venv)
+
+The evaluator pins **`torch==2.6.0+cu124`** (CUDA **12.4** user libs). Installing **`vllm`** or **`pip install -e` ms-swift** in the same environment often **replaces** that with a much newer wheel (for example **`2.11.0+cu130`**), which pulls in CUDA **13** NVRTC and can trigger **`libnvrtc-builtins.so.13.0`** errors or binary mismatches against vLLM.
+
+Check:
+
+```bash
+python3 -c 'import torch; print(torch.__version__, torch.version.cuda)'
+```
+
+Expect something like **`2.6.0+cu124`** and **`12.4`** if you match the challenge stack.
+
+**Re-align with the evaluator (recommended for reproducibility):**
+
+```bash
+pip install "torch==2.6.0+cu124" "torchvision==0.21.0+cu124" "torchaudio==2.6.0+cu124" \
+  --extra-index-url https://download.pytorch.org/whl/cu124
+pip install "vllm" -c docker/torch-cu124-constraints.txt \
+  --extra-index-url https://download.pytorch.org/whl/cu124
+```
+
+If resolution fails, use a **dedicated** venv for baselines or the **Docker** image instead of mixing unpinned `pip install vllm` into the evaluator env.
+
+**If you intentionally stay on CUDA 13 PyTorch:** ensure NVRTC wheels are present and loadable, e.g. `pip install -U "nvidia-cuda-nvrtc-cu13"`, and use a vLLM build matching that CUDA line (see [vLLM install docs](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)).
+
 ---
 
 ## Training Data Format
