@@ -6,8 +6,8 @@ for the two stages of our pipeline:
 1. **VLM** (`Qwen3-VL-8B-Instruct`) — image → forensic complex paragraph + `Verdict: real|fake`.
 2. **Compressor** (`Qwen3.5-4B`) — complex paragraph → short simple sentence.
 
-This README explains *why* the prompts, label format, class balance and
-hypothetical-prompt mix look the way they do. The design is informed by the
+This README explains *why* the prompts, label format, train/val split,
+and hypothetical-prompt mix look the way they do. The design is informed by the
 official challenge scoring (see `../.cursor/rules/xplainverse-evaluation-metrics.mdc`)
 and by recent papers on VLM-based AI-image detection.
 
@@ -16,12 +16,12 @@ and by recent papers on VLM-based AI-image detection.
 | File | Purpose |
 |------|---------|
 | `prompt.txt` | All prompt templates, in `=== NAME === ... === END ===` sections. Edit this to change prompts. |
-| `build_swift_jsonl.py` | Reads `prompt.txt` + raw manifests, balances classes, mixes hypotheticals, writes JSONL. |
+| `build_swift_jsonl.py` | Reads `prompt.txt` + raw manifests, optional class cap, train-only hypotheticals, writes JSONL. |
 | `sanity.py` | Verifies that every path referenced by the manifests exists on disk. |
-| `train_vlm.jsonl` | Balanced VLM SFT data (user + assistant + `Verdict:`). |
+| `train_vlm.jsonl` | VLM SFT data (user + assistant + `Verdict:`). Default: all 450k train rows. |
 | `train_vlm_infer.jsonl` | Same train rows but user-only (rarely used). |
 | `train_compressor.jsonl` | Fake-only compressor SFT data (complex → simple). |
-| `val_vlm.jsonl` | Val rows with assistant targets (for `--val_dataset` during SFT). |
+| `val_vlm.jsonl` | Val rows with assistant targets (`--val_dataset` during SFT). **Primary prompts only.** |
 | `val_vlm_infer.jsonl` | **All 110k** val rows, user-only — used to produce the submission. |
 | `val_compressor.jsonl` | Fake-only val for offline compressor evaluation. |
 
@@ -92,12 +92,12 @@ GT statistics from val:
    for it teaches the model to produce text that the metric will not
    score well.
 
-6. **Mix in FFAA-style hypothetical prompts (`--hypothetical-ratio 0.33`).**
-   FFAA [3] randomly converts ~1/3 of training prompts to a hypothetical
+6. **Mix in FFAA-style hypothetical prompts on train only (`--hypothetical-ratio 0.33`).**
+   FFAA [3] randomly converts ~1/3 of **training** prompts to a hypothetical
    form (`"This image is fake. Identify the evidence."`). They showed it
    stabilizes the model when the image is borderline. We use exactly that
-   ratio. The primary prompt is still used for **all** inference, so
-   prediction time is unchanged.
+   ratio on **train**; **val and inference always use the primary prompt**
+   so eval metrics match submission.
 
 7. **No long category-specific rubric in the user prompt.** FakeVLM's
    14 category prompts ([1, §3.2 Label Prompt Design]) are used only for
@@ -134,39 +134,54 @@ The forbidden-word list in the compressor prompt is deliberate: SLE
 penalises technical vocabulary, and copying the complex paragraph into the
 simple field is the most common single failure of one-pass approaches.
 
-## Class balance and sampling
+## Train / val split and sampling
 
-Raw manifest counts (verified by `sanity.py` + `iter_manifest`):
+XPlainVerse ships a **fixed official split** — we do not randomly re-split:
 
-| Split | Fake | Real | Total |
-|-------|------|------|-------|
-| Train | 320,000 | 130,000 | 450,000 |
-| Val   |  60,000 |  50,000 | 110,000 |
+| Split | Source | Fake | Real | Total |
+|-------|--------|------|------|-------|
+| Train | `data/XPlainVerse/train/manifest.jsonl` | 320,000 | 130,000 | **450,000** |
+| Val   | `data/XPlainVerse/val/manifest.jsonl`   |  60,000 |  50,000 | **110,000** |
 
-Train is **2.46 : 1** fake-heavy. We balance by downsampling fake to match
-real, giving **130k + 130k = 260k** VLM training rows — the same target
-size as the official baseline (`baselines/README.md`). This is controlled
-by `--train-max-per-class` (default `130000`; set `0` for no balancing).
+Train and val `sample_id`s do not overlap. Val is used for monitoring during
+SFT (typically a slice) and for the final 110k submission infer + official
+score (`evaluation/data/val_ground_truth.jsonl`).
 
-Why downsample rather than upweight:
+### VLM train rows (default: use all 450k)
 
-- Task 1 (`real`/`fake`) is currently unscored publicly, but a strongly
-  biased model still emits more "fake" verdicts on real images and that
-  pollutes the complex/simple text downstream.
-- 260k samples is plenty for 1-epoch LoRA on an 8B VLM and is what the
-  baseline ships, so we keep parity to make our ablations meaningful.
-- Val (1.2 : 1) is close to balanced; we keep all 110k for evaluation.
+Raw train is **2.46 : 1** fake-heavy. Default build keeps **every row**:
 
-The hypothetical prompt mix (`--hypothetical-ratio 0.33`, FFAA recipe)
-respects the per-sample label — a real image only ever gets the
-hypothetical-real prompt, and vice versa.
+- **320k fake + 130k real = 450k** VLM training rows
+- Controlled by `--train-max-per-class` (default **`0`** = no cap)
 
-Compressor data:
+We accept mild imbalance to maximize training data. The official baseline
+uses a balanced **260k** subset (130k per class); you can reproduce that
+for ablations:
 
-- Train default cap: **130k fake** rows (`--compressor-max-train 130000`).
+```bash
+python3 dataset/build_swift_jsonl.py --train-max-per-class 130000 --compressor-max-train 130000
+```
+
+### Hypothetical prompts (train only)
+
+`--hypothetical-ratio 0.33` applies to **train** only (~149k hypothetical +
+~301k primary on 450k). Val `val_vlm.jsonl` is **100% primary** — eval must
+mirror inference, not leak the label in the prompt.
+
+### Val
+
+Val (1.2 : 1 fake:real) is close to balanced; we keep **all 110k** rows
+(`--val-max-per-class 0`). During SFT, scripts slice this for cheap eval
+(e.g. `val_vlm.jsonl#100` sanity, `#2000` full) without touching the full
+110k held-out set.
+
+### Compressor data
+
+- Train default: **all 320k fake** rows (`--compressor-max-train 0`).
 - Real images are **excluded** from compressor training because their GT
-  simple text equals the GT complex text (see top-level README, "Notes").
-  Including them teaches the compressor to copy, which kills SLE.
+  simple text equals the GT complex text. Including them teaches the
+  compressor to copy, which kills SLE.
+- Val: **60k fake** (`val_compressor.jsonl`).
 
 ## Files written
 
@@ -176,11 +191,11 @@ dataset/
 ├── build_swift_jsonl.py
 ├── sanity.py
 ├── README.md
-├── train_vlm.jsonl            # 260k rows
-├── train_vlm_infer.jsonl      # 260k rows
-├── train_compressor.jsonl     # 130k rows (fake)
-├── val_vlm.jsonl              # 110k rows (or capped via --val-max-per-class)
-├── val_vlm_infer.jsonl        # ALWAYS 110k rows
+├── train_vlm.jsonl            # 450k rows (320k fake + 130k real)
+├── train_vlm_infer.jsonl      # 450k rows
+├── train_compressor.jsonl     # 320k rows (fake)
+├── val_vlm.jsonl              # 110k rows, primary prompts only
+├── val_vlm_infer.jsonl        # ALWAYS 110k rows, primary prompts only
 └── val_compressor.jsonl       # 60k rows (fake val)
 ```
 
@@ -194,7 +209,7 @@ Each row carries:
 | `id` | `{label}__{sample_id}` |
 | `sample_id` | Original `image_path` stem; used to align against the GT. |
 | `label` | Kept for analysis; ms-swift ignores it. |
-| `prompt_kind` | `primary` or `hypothetical` (VLM SFT only). |
+| `prompt_kind` | `primary` or `hypothetical` on **train**; always `primary` on **val**. |
 | `messages` | ms-swift conversation. |
 | `images` | Absolute path list (single image per row). |
 
@@ -213,21 +228,30 @@ python3 dataset/build_swift_jsonl.py
 That produces six JSONL files in `dataset/`:
 
 ```
-dataset/train_vlm.jsonl            # 260k rows
-dataset/train_vlm_infer.jsonl      # 260k rows
-dataset/train_compressor.jsonl     # 130k rows (fake)
-dataset/val_vlm.jsonl              # 110k rows
+dataset/train_vlm.jsonl            # 450k rows
+dataset/train_vlm_infer.jsonl      # 450k rows
+dataset/train_compressor.jsonl     # 320k rows (fake)
+dataset/val_vlm.jsonl              # 110k rows (primary only)
 dataset/val_vlm_infer.jsonl        # 110k rows  ← submission input
-dataset/val_compressor.jsonl       # 60k rows  (fake)
+dataset/val_compressor.jsonl       # 60k rows (fake)
 ```
 
-Full build takes ~7 min. Defaults: 130k+130k balanced train, 33% hypothetical
-prompt mix, fake-only compressor, seed 42.
+Full build takes ~12 min. Defaults: **all 450k train** (~2.5:1 fake:real),
+33% hypothetical on train only, all 320k fake for compressor, seed 42.
 
 After editing `prompt.txt`, rerun only:
 
 ```bash
 python3 dataset/build_swift_jsonl.py
+```
+
+**Training:** see [`TRAINING.md`](TRAINING.md) for full flag rationale. Quick start:
+
+```bash
+chmod +x scripts/train_vlm_sanity.sh scripts/train_vlm_full.sh
+./scripts/train_vlm_sanity.sh          # ~100 steps, 500 train rows, 1× A100
+./scripts/train_vlm_full.sh            # full 450k, 1× A100
+NPROC_PER_NODE=4 CUDA_VISIBLE_DEVICES=0,1,2,3 ./scripts/train_vlm_full.sh  # 4× GPU
 ```
 
 ---
@@ -262,14 +286,14 @@ wc -l /tmp/xpv_smoke/*.jsonl
 ### Common overrides
 
 ```bash
-# Val only (skip regenerating 260k train):
+# Val only (skip regenerating 450k train):
 python3 dataset/build_swift_jsonl.py --splits val
 
-# Disable hypothetical augmentation:
+# Disable hypothetical augmentation on train:
 python3 dataset/build_swift_jsonl.py --hypothetical-ratio 0.0
 
-# No class balancing (all 450k train rows):
-python3 dataset/build_swift_jsonl.py --train-max-per-class 0
+# Baseline-style balanced 260k train (130k per class):
+python3 dataset/build_swift_jsonl.py --train-max-per-class 130000 --compressor-max-train 130000
 
 # Custom output dir:
 python3 dataset/build_swift_jsonl.py \

@@ -110,14 +110,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splits", nargs="+", choices=("train", "val"),
                         default=("train", "val"),
                         help="Which splits to export (default: train val)")
-    parser.add_argument("--train-max-per-class", type=int, default=130000,
-                        help="Cap VLM train rows per class; matches real-class size "
-                             "(default: 130000). 0 = use all rows, no balancing.")
+    parser.add_argument("--train-max-per-class", type=int, default=0,
+                        help="Cap VLM train rows per class (default: 0 = use all, "
+                             "no balancing → 320k fake + 130k real = 450k). "
+                             "Set 130000 for baseline-style 260k balanced train.")
     parser.add_argument("--val-max-per-class", type=int, default=0,
                         help="Cap VLM val rows per class (default: 0 = use all). "
                              "val_vlm_infer.jsonl always contains ALL val images.")
-    parser.add_argument("--compressor-max-train", type=int, default=130000,
-                        help="Cap compressor train rows (fake-only); 0 = all (default: 130000).")
+    parser.add_argument("--compressor-max-train", type=int, default=0,
+                        help="Cap compressor train rows (fake-only); 0 = all fake "
+                             "(default: 0 → 320k). Set 130000 to match balanced VLM cap.")
     parser.add_argument("--compressor-max-val", type=int, default=0,
                         help="Cap compressor val rows (fake-only); 0 = all (default: 0).")
     parser.add_argument("--hypothetical-ratio", type=float, default=0.33,
@@ -421,8 +423,12 @@ def main() -> int:
                          else args.val_max_per_class)
         balanced_rows = balance_per_class(all_rows, max_per_class, rng)
 
+        # Val must mirror submission (primary prompts only). Hypothetical is
+        # train-time augmentation only.
+        hyp_ratio = args.hypothetical_ratio if split == "train" else 0.0
+
         vlm_rows, vlm_infer_rows_balanced, complex_cache = build_vlm_rows(
-            balanced_rows, prompts, args.hypothetical_ratio, stats, rng,
+            balanced_rows, prompts, hyp_ratio, stats, rng,
         )
 
         # For val, infer file must contain ALL val rows (not just balanced
