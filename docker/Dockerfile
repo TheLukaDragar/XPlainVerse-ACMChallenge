@@ -1,24 +1,19 @@
-# NVIDIA Slurm + Pyxis: CUDA 12.4 devel matches PyTorch cu124 wheels in
-# evaluation/env/xplainverse_eval_env.txt. Baselines: ms-swift (editable) + vLLM.
-#
-# Use the cuda *devel* image (includes nvcc). vLLM v1 may JIT-compile FlashInfer
-# kernels; cuda *runtime*-only images have no compiler and fail with
-# "/usr/local/cuda/bin/nvcc: not found" during engine startup.
+# Host GPU driver is CUDA 13.x (verified: NVIDIA-SMI 580, CUDA Version: 13.0).
+# Use the CUDA 13 devel image so nvcc matches the runtime libraries vLLM/FlashInfer need.
 #
 # Build:
 #   docker build -f docker/Dockerfile -t xplainverse:latest .
 #
-# Install order: pinned evaluator deps first, then ms-swift (may add/upgrade
-# packages), then vLLM. If you need strict adherence to every pin after that,
-# reconcile conflicts explicitly — re-running the eval requirements can break
-# ms-swift or vLLM.
+# Install order: evaluator deps first (pins transformers @ git SHA), then ms-swift,
+# then vLLM (brings in torch cu13 + matching CUDA libs — that is correct for this hardware).
 
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+FROM nvidia/cuda:13.0.0-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_ROOT_USER_ACTION=ignore
+    PIP_ROOT_USER_ACTION=ignore \
+    LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/nvidia/cu13/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -32,10 +27,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
-# --- Challenge evaluator (pinned; includes PyTorch cu124 + transformers @ git SHA)
+# --- Challenge evaluator (pins transformers @ git SHA; torch version will be overridden by vLLM below)
 WORKDIR /tmp
 COPY evaluation/env/xplainverse_eval_env.txt ./xplainverse_eval_env.txt
-COPY docker/torch-cu124-constraints.txt ./torch-cu124-constraints.txt
 RUN pip install -r xplainverse_eval_env.txt
 
 # --- Baselines (see baselines/README.md)
@@ -45,14 +39,9 @@ RUN git clone https://github.com/modelscope/ms-swift.git /opt/ms-swift \
     && git -C /opt/ms-swift checkout "${MS_SWIFT_REF}" \
     && pip install -e /opt/ms-swift
 
-# ms-swift deps may bump PyTorch to a newer CUDA wheel (e.g. cu13 NVRTC); realign with evaluator pins.
-RUN pip install --no-cache-dir \
-    "torch==2.6.0+cu124" "torchvision==0.21.0+cu124" "torchaudio==2.6.0+cu124" \
-    --extra-index-url https://download.pytorch.org/whl/cu124
-
-RUN pip install vllm \
-    -c /tmp/torch-cu124-constraints.txt \
-    --extra-index-url https://download.pytorch.org/whl/cu124
+# vLLM brings in the correct torch+CUDA build for the hardware (cu13 on CUDA 13 hosts).
+# It explicitly supports transformers !=5.0-5.5, >=4.56 which matches the eval pin (5.6.0.dev0).
+RUN pip install vllm
 
 # Video / Qwen-VL helpers (ms-swift prints a warning and some paths need these for Qwen3-VL).
 RUN pip install "qwen_vl_utils>=0.0.14" "decord>=0.6.0"

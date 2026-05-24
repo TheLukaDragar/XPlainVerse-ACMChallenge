@@ -1,0 +1,99 @@
+---
+description: XPlainVerse ACM-MM 2026 challenge context — environment, stack, results, and open work
+alwaysApply: true
+---
+
+# XPlainVerse Challenge — Persistent Context
+
+## What the Challenge Is
+
+ACM Multimedia 2026 Grand Challenge on **explainable deepfake detection**.
+
+- **Task 1:** Binary classification — is the image `real` or `fake`?
+- **Task 2:** Generate two grounded NL explanations per image:
+  - `complex_explanation` — detailed, technical, grounded in visible artifacts
+  - `simple_explanation` — short, accessible, same core reason
+
+**Key dates:**
+- 26 May 2026 — submission opens (2 days away as of session)
+- 15 Jun 2026 — final submission deadline
+- 30 Jun 2026 — paper deadline (on-site presentation required at ACM-MM)
+
+## Dataset (XPlainVerse)
+
+| Split | Images | Real | Fake |
+|---|---|---|---|
+| Train | 450,000 | 130k | 320k |
+| Val | 110,000 | 50k | 60k |
+
+Located at: `/shared/workspace/lrv/luka/XPlainVerse-ACMChallenge/data/XPlainVerse/`
+Val ground truth: `evaluation/data/val_ground_truth.jsonl` (110,012 rows)
+
+## Scoring (Task 2)
+
+**Complex explanation** (`complex_overall_score`):
+- 30% `complex_bert_f1` (BERTScore vs. reference)
+- 40% `complex_entity_f1` (Qwen3.5-4B extracts entities, checks bidirectional coverage)
+- 30% `complex_facts_f1` (same for evidence claims)
+
+**Simple explanation** (`simple_overall_score`):
+- 70% `simple_bert_f1` (BERTScore)
+- 30% `simple_sle_score` normalized (liamcripwell/sle-base — rewards short, simple language)
+
+## Models (both already downloaded)
+
+| Model | Path | Model type |
+|---|---|---|
+| Qwen3-VL-8B-XPlainVerse | `baseline_models/Qwen3-VL-8B-XPlainVerse` | `qwen3_vl` |
+| InternVL3.5-14B-XPlainVerse | `baseline_models/InternVL3_5-14B-XPlainVerse` | `internvl3_5` |
+
+HuggingFace: `kartik060702/Qwen3-VL-8B-XPlainVerse`, `kartik060702/InternVL3_5-14B-XPlainVerse`
+
+Fine-tuned with LoRA (rank 16, alpha 32) on 260k balanced samples (1 epoch), then LoRA-merged.
+Training used one `<reasoning>` + `<answer>` format — **not** separate simple/complex fields.
+
+## Environment
+
+- Host GPU driver: **CUDA 13.0** (NVIDIA-SMI 580)
+- torch: `2.11.0+cu130`
+- vLLM: `0.21.0` — working with `VLLM_USE_FLASHINFER_SAMPLER=0`
+- transformers: `5.6.0.dev0` (pinned git SHA in eval env)
+- ms-swift: `4.3.0.dev0` (editable install at `/opt/ms-swift`)
+
+**Required env vars for vLLM:**
+```bash
+export LD_LIBRARY_PATH="/usr/local/lib/python3.10/dist-packages/nvidia/cu13/lib:${LD_LIBRARY_PATH:-}"
+export VLLM_USE_FLASHINFER_SAMPLER=0
+export TORCH_COMPILE_DISABLE=1
+```
+
+## Inference Scripts
+
+- **Smoke test (few samples):** `baselines/run_baseline_infer_smoke.sh`
+- **Full val run:** `baselines/run_baseline_infer_full.sh`
+  - `MODEL=qwen` (default) or `MODEL=internvl`
+  - `INFER_BACKEND=vllm` (default, ~1.5 samples/sec) or `INFER_BACKEND=transformers`
+  - Output: `runs/<model_tag>_output.jsonl` + `runs/<model_tag>_submission.jsonl`
+
+## Smoke Test Results (20 val samples, all fake)
+
+- **Accuracy: 15/20 = 75%** (transformers backend, Qwen3-VL-8B)
+- **Simple BERTScore F1: 0.60** vs GT simple explanations
+- **Simple SLE score: -0.21** (negative = model output too complex for simple field)
+
+## Biggest Open Problem
+
+The baseline was trained to produce **one `<reasoning>` block**, but the evaluator scores **two separate fields**. Currently `<reasoning>` is mapped to both `complex_explanation` and `simple_explanation`.
+
+This is why `simple_sle_score` is negative — the model writes long, technical text for the simple field. **The simple explanation must be short and child-friendly** (e.g. "The puppy looks like a sticker on the shirt").
+
+**To improve scores before the deadline:**
+1. Prompt the model to generate both levels in one pass (e.g. add `<simple>...</simple><complex>...</complex>` tags)
+2. Or run a second pass to simplify the complex explanation
+3. Fine-tune on the paired simple/complex annotations from the training set
+
+## Submission Format
+
+```json
+{"sample_id": "...", "label": "fake", "complex_explanation": "...", "simple_explanation": "..."}
+```

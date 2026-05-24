@@ -34,7 +34,10 @@ DATASET_JSONL="${DATASET_JSONL:-${RUN_DIR}/baseline_smoke_infer_dataset.jsonl}"
 RESULT_JSONL="${RESULT_JSONL:-${RUN_DIR}/baseline_smoke_infer_output.jsonl}"
 
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
-INFER_BACKEND="${INFER_BACKEND:-vllm}"
+# Qwen3-VL has no native vLLM implementation (vLLM falls back to the Transformers
+# backend anyway) and vLLM 0.8.5 is incompatible with the challenge's transformers 5.x
+# pin. Default to transformers; override to vllm only if you have a compatible vLLM build.
+INFER_BACKEND="${INFER_BACKEND:-transformers}"
 
 # torch.compile uses NVRTC; a PyTorch wheel built for CUDA 13 expects
 # libnvrtc-builtins.so.13.0. If that user-space lib is missing or the stack was
