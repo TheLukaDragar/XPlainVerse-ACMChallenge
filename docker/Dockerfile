@@ -46,6 +46,9 @@ RUN pip install vllm
 # Video / Qwen-VL helpers (ms-swift prints a warning and some paths need these for Qwen3-VL).
 RUN pip install "qwen_vl_utils>=0.0.14" "decord>=0.6.0"
 
+# Flash Attention 2 — built from source against the vLLM-installed torch (requires nvcc from devel image).
+RUN pip install flash-attn --no-build-isolation
+
 # --- Repository tree (weights excluded via .dockerignore)
 WORKDIR /workspace/XPlainVerse-ACMChallenge
 COPY . .
