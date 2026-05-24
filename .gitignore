@@ -1,0 +1,10 @@
+# Generated ms-swift JSONL (rebuild: python3 dataset/build_swift_jsonl.py)
+dataset/*.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Local model weights / scratch
+baseline_models/
+runs/

@@ -1,0 +1,125 @@
+# XPlainVerse ACM-MM 2026 — training & inference prompts
+# Parsed by dataset/build_swift_jsonl.py. Sections are delimited by:
+#   === SECTION_NAME ===
+# Everything between two section markers is the literal prompt text.
+# Lines starting with "#" outside section blocks are comments and are
+# ignored by the parser. Blank lines inside a section are preserved.
+#
+# Design notes (why these prompts look the way they do):
+#   * Entity F1 + Facts F1 = 70% of the complex score. The prompt must
+#     push the model to enumerate multiple distinct evidence objects and
+#     describe what is wrong (fake) or authentic (real) about each.
+#   * GT complex paragraphs average ~109 words across 4–6 named objects
+#     and frequently use "Additionally / Furthermore". We mirror that
+#     instruction so the SFT target distribution and inference prompt
+#     stay aligned.
+#   * "Examine the style and the synthesis artifacts" is the task-aligned
+#     prefill from Prefill-Guided Thinking (arXiv 2506.11031) which
+#     boosted zero-shot Macro F1 by up to 24% on three open VLMs. We
+#     keep that exact phrase verbatim because PGT showed phrasing is
+#     brittle (dropping "synthesis artifacts" lost ~10 points).
+#   * Verdict trails the paragraph (evidence before judgment) and is on
+#     its own line for a trivial regex parser at submission time.
+#   * Hypothetical prompts (FFAA, arXiv 2408.10072) presume the label
+#     and ask only for evidence. Mixing ~1/3 of training samples with
+#     these stabilises the model when the image is borderline.
+#   * No <reasoning>/<answer> XML, no chain-of-thought instruction:
+#     FakeVLM (arXiv 2503.14905) and PGT both show forensic phrasing
+#     beats generic CoT for this task.
+
+
+# ===========================================================================
+# VLM (Qwen3-VL-8B-Instruct) — image -> complex explanation + Verdict
+# ===========================================================================
+# The build script prepends "<image>\n" to the user content for ms-swift
+# multimodal samples. Do NOT include "<image>" here.
+
+
+# --- 1. Primary VLM user prompt (use for ~2/3 of training, all inference) ---
+=== VLM_USER_PROMPT ===
+TASK: Decide whether this image is a real photograph or AI-generated.
+Examine the style and the synthesis artifacts. Identify several specific
+objects or regions in the image (typically 4–6) and, in one coherent
+paragraph, describe the visual evidence visible in each — distorted text,
+warped geometry, smudged or merged textures, anatomical errors,
+inconsistent lighting or shadows, unnatural object boundaries, or, for
+real images, the authentic photographic cues that support the judgment.
+Use connectives such as "Additionally" and "Furthermore" to chain the
+observations together.
+
+End your response with a new line containing exactly:
+Verdict: real
+or
+Verdict: fake
+=== END ===
+
+
+# --- 2. Hypothetical-fake prompt (use for ~1/6 of FAKE training samples) ---
+# FFAA-style: tell the model the answer and ask it to justify.
+=== VLM_USER_PROMPT_HYPOTHETICAL_FAKE ===
+TASK: This image is AI-generated. Identify several specific objects or
+regions (typically 4–6) and, in one coherent paragraph, describe the
+synthesis artifacts visible in each — distorted text, warped geometry,
+smudged or merged textures, anatomical errors, inconsistent lighting or
+shadows, or unnatural object boundaries. Use connectives such as
+"Additionally" and "Furthermore" to chain the observations together.
+
+End your response with a new line containing exactly:
+Verdict: fake
+=== END ===
+
+
+# --- 3. Hypothetical-real prompt (use for ~1/6 of REAL training samples) ---
+=== VLM_USER_PROMPT_HYPOTHETICAL_REAL ===
+TASK: This image is a real photograph. Identify several specific objects
+or regions and, in one coherent paragraph, describe the authentic
+photographic cues visible in each — natural texture detail, plausible
+lighting and shadows, consistent geometry, and physically coherent
+object boundaries.
+
+End your response with a new line containing exactly:
+Verdict: real
+=== END ===
+
+
+# --- 4. VLM assistant target template (documentation only, not parsed) ---
+# Build the assistant content as:
+#
+#   {ground-truth complex_explanation, verbatim}
+#
+#   Verdict: {real|fake}
+#
+# Example (fake sample 0000bdaecc8a366ea1d2bcc1):
+#
+#   The image exhibits clear signs of synthetic generation, primarily due
+#   to severe text artifacts. The large white banner ... [GT continues]
+#
+#   Verdict: fake
+
+
+# ===========================================================================
+# Compressor (Qwen3.5-4B) — complex paragraph -> short simple sentence
+# ===========================================================================
+# The build script appends the complex paragraph to the user content
+# verbatim (no extra formatting, just a blank line between prompt and
+# paragraph). Train on fake samples only because for real images the GT
+# "simple" field is identical to the GT "complex" field — including
+# those rows teaches the compressor to copy, which destroys the SLE
+# simplicity score.
+
+
+=== COMPRESSOR_USER_PROMPT ===
+TASK: Rewrite the explanation below in plain everyday language so a
+non-expert immediately understands why the image looks fake. Use one
+or two short sentences, no more than ~35 words. Keep the single most
+important visual reason and the main object it refers to. Do not
+introduce new facts. Avoid technical vocabulary such as "artifact",
+"synthesis", "inconsistency", "generation", "synthetic", or
+"anatomical".
+
+Explanation:
+=== END ===
+
+
+# --- Compressor assistant target ---
+# GT simple_explanation, verbatim.
