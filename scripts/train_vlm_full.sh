@@ -81,8 +81,14 @@ EVAL_STEPS="${EVAL_STEPS:-400}"
 LOGGING_STEPS="${LOGGING_STEPS:-10}"
 
 # --- Performance flags (Qwen3-VL Best Practice) ---
-PACKING="${PACKING:-true}"
-PADDING_FREE="${PADDING_FREE:-true}"
+# NOTE: packing + lazy_tokenize are mutually exclusive in ms-swift 4.x (two-pass
+# map for multimodal packing is extremely slow on 450k images over shared FS).
+# We disable packing and use lazy_tokenize instead — tokenizes on-the-fly per
+# batch, zero upfront Map cost. Re-enable packing if you pre-build a packing
+# cache on $SCRATCH first (--packing_cache /local/scratch/...).
+PACKING="${PACKING:-false}"
+PADDING_FREE="${PADDING_FREE:-false}"
+LAZY_TOKENIZE="${LAZY_TOKENIZE:-true}"
 DEEPSPEED="${DEEPSPEED:-zero2}"
 
 # --- Eval-time generation + W&B prediction table ---
@@ -139,7 +145,7 @@ echo "gpus:                NPROC=${NPROC_PER_NODE}  CUDA=${CUDA_VISIBLE_DEVICES}
 echo "per_device_bs:       ${PER_DEVICE_BS}  grad_accum: ${GRAD_ACCUM}  → eff batch ${EFF_BATCH}"
 echo "epochs:              ${NUM_EPOCHS}"
 echo "max_length:          ${MAX_LENGTH}  lr: ${LEARNING_RATE}  rank: ${LORA_RANK}"
-echo "packing:             ${PACKING}  padding_free: ${PADDING_FREE}"
+echo "packing:             ${PACKING}  padding_free: ${PADDING_FREE}  lazy_tokenize: ${LAZY_TOKENIZE}"
 echo "predict_with_gen:    ${PREDICT_WITH_GENERATE}  (max_new_tokens=${MAX_NEW_TOKENS})"
 echo "wandb_pred_callback: ${USE_PRED_CALLBACK}  (sample_n=${WANDB_SAMPLE_N})"
 echo "output:              ${OUTPUT_DIR}"
@@ -176,6 +182,7 @@ swift sft \
   --attn_impl flash_attn \
   --packing "${PACKING}" \
   --padding_free "${PADDING_FREE}" \
+  --lazy_tokenize "${LAZY_TOKENIZE}" \
   --max_length "${MAX_LENGTH}" \
   --num_train_epochs "${NUM_EPOCHS}" \
   --per_device_train_batch_size "${PER_DEVICE_BS}" \
