@@ -206,6 +206,7 @@ swift sft \
   --dataloader_num_workers 4 \
   --dataset_num_proc 4 \
   --load_from_cache_file true \
+  --lazy_tokenize true \
   --seed "${SEED}" \
   --output_dir "${OUTPUT_DIR}" \
   "${DEEPSPEED_FLAG[@]}" \
