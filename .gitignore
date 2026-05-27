@@ -15,3 +15,6 @@ wandb/
 # Local logs (HF fetch, agent runners)
 logs/
 scripts/agent_tasks/logs/
+
+# Generated SSH deploy keys (see .github/SSH_GITHUB_SETUP.md)
+.github/local-secrets/

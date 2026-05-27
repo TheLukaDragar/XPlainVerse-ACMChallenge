@@ -33,6 +33,23 @@ docker build -f docker/Dockerfile.lj -t xplainverse-lj-train:latest .
 
 Override the wheel only if you change the Torch/CUDA line (pick a filename that matches `torch.__version__` and `torch.version.cuda`).
 
+### CI-built image (GitHub Actions)
+
+On pushes to the default branch (when `docker/Dockerfile.lj` or related paths change), workflow **`.github/workflows/container-lj.yml`** pushes to GHCR with a **Slurm-oriented suffix**:
+
+| Tag pattern | Example |
+|-------------|---------|
+| `latest-slurm` | `ghcr.io/<owner>/<repo>:latest-slurm` (default branch only) |
+| `sha-<git>-slurm` | `ghcr.io/<owner>/<repo>:sha-abc123...-slurm` |
+
+Apptainer example:
+
+```bash
+apptainer pull docker://ghcr.io/<owner>/<repo>:latest-slurm
+```
+
+Use a PAT with `read:packages` (or org credentials) where the cluster cannot use anonymous GHCR pulls.
+
 ## CI-published image
 
 GitHub Actions builds and pushes to GHCR when relevant paths change on the default branch (see `.github/workflows/container.yml`). Image name:
