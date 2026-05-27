@@ -15,6 +15,12 @@ Use the Apptainer SIF via `~/xplainverse_exec.sh` — not the host `(base)` cond
   --data-root /home/jakob/luka/data/XPlainVerse --output-dir dataset
 ```
 
+Detached Slurm batch (survives logout; same node/partition defaults as `lj_gpu_exec`):
+
+```bash
+./scripts/sbatch_jsonl_build_lj.sh
+```
+
 **Small capped split** (smoke / layout check only; same script):
 
 ```bash
