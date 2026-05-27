@@ -15,7 +15,12 @@ set -euo pipefail
 WORKSPACE_ROOT=/shared/workspace/lrv/luka/XPlainVerse-ACMChallenge
 CODE_ROOT="${WORKSPACE_ROOT}/code/XPlainVerse-ACMChallenge"
 EXP_DIR="${CODE_ROOT}/research/experiments/01_gold_verdict"
-ADAPTERS="${WORKSPACE_ROOT}/runs/vlm_full/v1-20260524-214014/checkpoint-2400"
+# Default: oldest surviving checkpoint (2400 was pruned by save_total_limit=5).
+ADAPTERS="${ADAPTERS:-${WORKSPACE_ROOT}/runs/vlm_full/v1-20260524-214014/checkpoint-3600}"
+if [[ ! -d "${ADAPTERS}" ]]; then
+  echo "error: adapters checkpoint not found: ${ADAPTERS}" >&2
+  exit 1
+fi
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export LD_LIBRARY_PATH="/usr/local/lib/python3.10/dist-packages/nvidia/cu13/lib:${LD_LIBRARY_PATH:-}"
@@ -23,7 +28,11 @@ export TORCH_COMPILE_DISABLE=1
 export IMAGE_MAX_TOKEN_NUM=1024
 export MAX_PIXELS=1003520
 
-VARIANTS=(baseline conditioned structured)
+if [[ -n "${VARIANTS:-}" ]]; then
+  read -ra VARIANTS <<< "${VARIANTS}"
+else
+  VARIANTS=(baseline conditioned structured)
+fi
 
 mkdir -p "${EXP_DIR}/results"
 

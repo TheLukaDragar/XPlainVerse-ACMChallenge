@@ -11,6 +11,8 @@ Working notes that motivate the architectural decisions for our XPlainVerse subm
 | `03_zero_shot_experiment.md` | Today's experiment: 6/7 simplicityprevails baselines on XPlainVerse val |
 | `04_strategy.md` | Recommended pipeline + literature support for each design choice |
 | `05_open_questions.md` | Things I claimed without direct experimental support — flagged honestly |
+| `06_training_data_v2.md` | Research-grounded design for the new training set (`train_vlm_v2.jsonl`) — prompt-mix and fake-GT filter, each cited |
+| `07_gt_vocabulary_analysis.md` | Mining of 2000 fake + 2000 real GTs from `train_vlm.jsonl` — opening templates, transitions, distinctive vocabulary, and the v2.1 prompt revisions they motivate |
 | `references.bib` | BibTeX for everything |
 
 ## TL;DR (numbers only)
