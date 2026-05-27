@@ -5,7 +5,7 @@ name: Build and push Ljubljana (cu121) container
 
 on:
   push:
-    branches: [main, master]
+    # Any branch — otherwise pushes to e.g. cursor/* never trigger this workflow.
     paths:
       - 'docker/Dockerfile.lj'
       - 'docker/Dockerfile'
