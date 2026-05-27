@@ -21,6 +21,18 @@ Pin ms-swift to a branch or tag:
 docker build -f docker/Dockerfile --build-arg MS_SWIFT_REF=vX.Y.Z -t xplainverse:dev .
 ```
 
+## Ljubljana training image (`Dockerfile.lj`)
+
+The default `docker/Dockerfile` targets **CUDA 13 + vLLM** and installs a FlashAttention wheel built for **`cu130` + `torch2.11`**. That wheel is **wrong** for an image built around **PyTorch `+cu121`** (e.g. `2.4.1+cu121` on elixir-lj-gpu): `pip` may succeed but **`import flash_attn` fails** or loads incompatible CUDA symbols.
+
+Use **`docker/Dockerfile.lj`** for a **cu121 + torch 2.4.1** stack and a matching prebuilt wheel (`flash_attn-2.8.0+cu121torch2.4`, [mjun0812 v0.3.11](https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.3.11)):
+
+```bash
+docker build -f docker/Dockerfile.lj -t xplainverse-lj-train:latest .
+```
+
+Override the wheel only if you change the Torch/CUDA line (pick a filename that matches `torch.__version__` and `torch.version.cuda`).
+
 ## CI-published image
 
 GitHub Actions builds and pushes to GHCR when relevant paths change on the default branch (see `.github/workflows/container.yml`). Image name:

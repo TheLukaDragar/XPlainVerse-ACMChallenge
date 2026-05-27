@@ -53,9 +53,20 @@ RUN pip install jieba nltk rouge
 # Experiment tracking — used by scripts/train_vlm_*.sh (REPORT_TO=wandb is default).
 RUN pip install -U wandb
 
-# Flash Attention 2 — pre-built wheel (no compilation). Pin exact wheel that matches
-# Python 3.10 + CUDA 13.0 + PyTorch 2.11 shipped by vLLM. Source: mjun0812/flash-attention-prebuild-wheels.
-RUN pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.8.3+cu130torch2.11-cp310-cp310-linux_x86_64.whl
+# Flash Attention 2 — pre-built wheel (no compilation). The filename MUST match the
+# PyTorch build that exists *after* the lines above (`pip show torch`: CUDA tag + version).
+# Source: https://github.com/mjun0812/flash-attention-prebuild-wheels/releases
+#
+# Default below: Python 3.10 + cu130 + torch 2.11 after `pip install vllm` on this CUDA 13 image.
+#
+# Lj / Apptainer (PyTorch cu121, e.g. 2.4.x): use docker/Dockerfile.lj, or override at build time, e.g.
+#   --build-arg FLASH_ATTN_RELEASE=v0.3.11 \
+#   --build-arg FLASH_ATTN_WHEEL=flash_attn-2.8.0+cu121torch2.4-cp310-cp310-linux_x86_64.whl
+# (only if you also install a matching torch+cu121 in this image — do not mix with vLLM+cu13 torch.)
+ARG FLASH_ATTN_RELEASE=v0.9.4
+ARG FLASH_ATTN_WHEEL=flash_attn-2.8.3+cu130torch2.11-cp310-cp310-linux_x86_64.whl
+RUN pip install "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${FLASH_ATTN_RELEASE}/${FLASH_ATTN_WHEEL}" \
+    && python3 -c "import flash_attn, torch; print('flash_attn', flash_attn.__version__, 'torch', torch.__version__)"
 
 # --- Repository tree (weights excluded via .dockerignore)
 WORKDIR /workspace/XPlainVerse-ACMChallenge

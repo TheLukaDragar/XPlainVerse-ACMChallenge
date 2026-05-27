@@ -1,0 +1,63 @@
+# XPlainVerse — Ljubljana (elixir-lj-gpu) training image: PyTorch cu121 + FlashAttention wheel that matches it.
+#
+# This is NOT the CUDA 13 + vLLM stack in docker/Dockerfile. Lj nodes use a PyTorch
+# build with CUDA 12.1 (cu121). A cu130 / torch2.11 FlashAttention wheel will not load.
+#
+# Build (from repo root):
+#   docker build -f docker/Dockerfile.lj -t xplainverse-lj-train:latest .
+#
+# A100 (sm_80): supported by these FlashAttention builds.
+#
+# If you change the Torch line below, pick a matching wheel from
+# https://github.com/mjun0812/flash-attention-prebuild-wheels/releases
+# (wheel filename encodes +cuXXXXtorchY.Y — they must match `python3 -c "import torch; print(torch.__version__)"`).
+
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_ROOT_USER_ACTION=ignore
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev git ca-certificates build-essential \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --upgrade pip setuptools wheel
+
+# --- PyTorch 2.4.x + CUDA 12.1 (matches typical Lj Apptainer / A100 driver stack) ---
+RUN pip install \
+    torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+WORKDIR /tmp
+COPY evaluation/env/xplainverse_eval_env.txt ./xplainverse_eval_env.txt
+# Keep Torch stack from the `pip install torch==2.4.1 ... cu121` layer; install the rest of the evaluator pins.
+RUN grep -vE '^(torch|torchvision|torchaudio)(==|$)' xplainverse_eval_env.txt > /tmp/req_no_torch.txt \
+    && pip install -r /tmp/req_no_torch.txt \
+    && pip install --no-cache-dir \
+        torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 \
+        --index-url https://download.pytorch.org/whl/cu121
+
+ARG MS_SWIFT_REF=main
+WORKDIR /opt/ms-swift
+RUN git clone https://github.com/modelscope/ms-swift.git /opt/ms-swift \
+    && git -C /opt/ms-swift checkout "${MS_SWIFT_REF}" \
+    && pip install -e /opt/ms-swift
+
+# ZeRO-2 (optional but used by scripts/train_vlm_full_lj.sh when the package exists)
+RUN pip install 'deepspeed>=0.14.0'
+
+RUN pip install "qwen_vl_utils>=0.0.14" "decord>=0.6.0" jieba nltk rouge wandb
+
+# FlashAttention 2 — prebuilt for cu121 + torch 2.4 + cp310 (mjun0812 v0.3.11).
+ARG FLASH_ATTN_RELEASE=v0.3.11
+ARG FLASH_ATTN_WHEEL=flash_attn-2.8.0+cu121torch2.4-cp310-cp310-linux_x86_64.whl
+RUN pip install "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${FLASH_ATTN_RELEASE}/${FLASH_ATTN_WHEEL}" \
+    && python3 -c "import flash_attn; import torch; print('flash_attn', flash_attn.__version__, 'torch', torch.__version__, 'cuda', torch.version.cuda)"
+
+WORKDIR /workspace/XPlainVerse-ACMChallenge
+COPY . .
+
+CMD ["bash"]
