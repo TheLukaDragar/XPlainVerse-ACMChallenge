@@ -11,10 +11,8 @@
 set -euo pipefail
 
 REPO="${REPO:-${HOME}/luka/code/XPlainVerse-ACMChallenge}"
+# Default: GPU-node NVMe path (do not test -d on login — /primoz is not mounted there).
 DATA_ROOT="${DATA_ROOT:-/primoz/luka/XPlainVerse/data/XPlainVerse}"
-if [[ ! -d "${DATA_ROOT}/train" && -d "${HOME}/luka/data/XPlainVerse/train" ]]; then
-  DATA_ROOT="${HOME}/luka/data/XPlainVerse"
-fi
 PARTITION="${LJ_PARTITION:-elixir-interno}"
 GPU_NODE="${LJ_GPU_NODE:-elixir-lj-gpu-01.elixir.ul.si}"
 GPU_TIME="${LJ_GPU_TIME:-12:00:00}"
