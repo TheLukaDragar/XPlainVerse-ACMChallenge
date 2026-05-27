@@ -11,3 +11,7 @@ runs/
 
 # Weights & Biases
 wandb/
+
+# Local logs (HF fetch, agent runners)
+logs/
+scripts/agent_tasks/logs/

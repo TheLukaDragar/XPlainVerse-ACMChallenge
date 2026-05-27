@@ -1,0 +1,79 @@
+---
+description: Elixir lj cluster — worker on login node; GPU/Python/training via lj_gpu_exec + Apptainer
+alwaysApply: true
+---
+
+# XPlainVerse — Elixir lj Cluster Execution
+
+The Cursor **My Machines worker** (`elixir-lj-gpu`) usually runs on the **Slurm login node** (`slurm`, `*.elixir.ul.si`). That host has **no GPUs** and **no Apptainer**. Host conda `(base)` is wrong for this project.
+
+## Golden rule
+
+| Task type | Where to run |
+|-----------|----------------|
+| Edit files, git, docs | Worker host (login node) — OK |
+| Python, torch, swift, nvidia-smi, training, eval, inference | **GPU node + Apptainer** — required |
+
+Never run `python`, `swift`, `torch`, or GPU checks directly on the login node.
+
+## How to run GPU / container commands
+
+### From login node (worker default)
+
+Use the dispatch wrapper — it `srun`s to `elixir-lj-gpu-01` and runs inside Apptainer:
+
+```bash
+./scripts/lj_gpu_exec.sh python3 -c 'import torch; print(torch.cuda.device_count())'
+./scripts/lj_gpu_exec.sh bash scripts/train_vlm_full_lj.sh
+./scripts/lj_gpu_exec.sh python3 dataset/build_swift_jsonl.py \
+  --data-root /home/jakob/luka/data/XPlainVerse --output-dir dataset
+```
+
+Quick one-GPU check (shorter allocation):
+
+```bash
+LJ_GPU_GRES=gpu:1 LJ_GPU_TIME=00:30:00 ./scripts/lj_gpu_exec.sh nvidia-smi
+```
+
+### Already on GPU node (Cursor tunnel / srun shell)
+
+If `hostname` contains `elixir-lj-gpu`, skip `lj_gpu_exec.sh` and use:
+
+```bash
+~/xplainverse_exec.sh python3 ...
+~/xplainverse_exec.sh bash scripts/train_vlm_full_lj.sh
+```
+
+## Apptainer environment
+
+| | Value |
+|---|---|
+| Entry | `~/xplainverse_exec.sh` |
+| SIF | `~/containers/xplainverse-acmchallenge.sif` |
+| OS / Python / Torch | Ubuntu 22.04, Python 3.10, Torch 2.2.2+cu121 |
+| GPUs on node | 4× A100 80GB |
+| Container project | `/workspace/XPlainVerse-ACMChallenge` |
+| Host project | `~/luka/code/XPlainVerse-ACMChallenge` |
+| Dataset | `~/luka/data/XPlainVerse` |
+
+Inside container: prompt `(xplainverse)`, banner `--- xplainverse container ---`.
+
+## Slurm / tunnel context
+
+- GPU node: `elixir-lj-gpu-01.elixir.ul.si`, partition `elixir-interno`
+- Interactive tunnel: `~/cursor_gpu_lj.sh` (holds a 4-GPU srun job)
+- Worker launcher: `./scripts/run_cursor_worker_lj.sh` (tmux on login node)
+- Local headless agent: `./scripts/run_agent_lj_multigpu_setup.sh` (separate from Agents panel)
+
+## Training scripts (lj)
+
+- Full lj training: `scripts/train_vlm_full_lj.sh` (default 4 GPU, deepspeed zero2)
+- From login worker: `./scripts/lj_gpu_exec.sh bash scripts/train_vlm_full_lj.sh`
+- Checkpoints default: `/home/jakob/luka/runs/vlm_full`
+
+## Agent checklist before GPU work
+
+1. Confirm target: login → `lj_gpu_exec.sh`; on gpu node → `xplainverse_exec.sh`
+2. Do not assume `import torch` works on the worker host
+3. Build JSONL / sanity checks via dispatch wrapper if not on GPU node
+4. Do not start multi-hour full training unless explicitly asked
