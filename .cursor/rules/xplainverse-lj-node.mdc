@@ -1,5 +1,5 @@
 ---
-description: Elixir lj cluster — worker on login node; GPU/Python/training via lj_gpu_exec + Apptainer
+description: Elixir lj cluster — GHCR -lj training image, primoz data, lj_gpu_exec / lj_ghcr_image_exec
 alwaysApply: true
 ---
 
@@ -35,15 +35,62 @@ Quick one-GPU check (shorter allocation):
 LJ_GPU_GRES=gpu:1 LJ_GPU_TIME=00:30:00 ./scripts/lj_gpu_exec.sh nvidia-smi
 ```
 
-### GHCR CI image (`<repo>-lj`, Dockerfile.lj)
+### GHCR Lj training image (preferred for flash + packing)
 
-Separate GHCR package from the CUDA 13 / vLLM eval image. Default: `ghcr.io/.../xplainverse-acmchallenge-lj:latest`.
+**Two separate GHCR packages** — do not mix them:
+
+| Package | Dockerfile | CI workflow | Stack | Use for |
+|---------|------------|-------------|-------|---------|
+| `ghcr.io/thelukadragar/xplainverse-acmchallenge` | `docker/Dockerfile` | `container.yml` | CUDA 13, vLLM, torch 2.11+cu130 | Eval / inference |
+| `ghcr.io/thelukadragar/xplainverse-acmchallenge-lj` | `docker/Dockerfile.lj` | `container-lj.yml` | cu121, torch 2.4.1, **flash_attn**, deepspeed, ms-swift | **Lj Slurm training** |
+
+Tags on `-lj`: `latest`, `sha-<7hex>` (metadata-action short SHA, **not** 40-char).
+
+**Run via** `scripts/lj_ghcr_image_exec.sh` (not `lj_gpu_exec.sh`) for full training with flash attention + packing:
 
 ```bash
-./scripts/lj_ghcr_image_exec.sh python3 -c 'import torch, flash_attn; print(torch.__version__, flash_attn.__version__)'
+# Verify (after CI has pushed -lj package, or use legacy tag below)
+LJ_GPU_GRES=gpu:1 LJ_GPU_TIME=00:30:00 \
+  ./scripts/lj_ghcr_image_exec.sh python3 -c \
+  'import torch, flash_attn; print(torch.__version__, flash_attn.__version__)'
+
+# Full 4-GPU training (max lj allocation example)
+LJ_GPU_GRES=gpu:4 LJ_GPU_MEM=256G LJ_GPU_CPUS=32 LJ_GPU_TIME=48:00:00 \
+  ./scripts/lj_ghcr_image_exec.sh bash scripts/train_vlm_full_lj.sh
 ```
 
-See `scripts/LJ_TRAINING.md` and `apptainer/xplainverse-lj-training.def`.
+Override image tag:
+
+```bash
+LJ_APPTAINER_IMAGE=docker://ghcr.io/thelukadragar/xplainverse-acmchallenge-lj:latest \
+  ./scripts/lj_ghcr_image_exec.sh ...
+```
+
+**Legacy (one early CI run):** Lj image was pushed to the **eval** package with tag `sha-6224dd3-slurm` (note `-slurm` suffix + 7-char SHA). Still valid until `-lj` CI runs:
+
+```bash
+LJ_APPTAINER_IMAGE=docker://ghcr.io/thelukadragar/xplainverse-acmchallenge:sha-6224dd3-slurm \
+  ./scripts/lj_ghcr_image_exec.sh bash scripts/train_vlm_full_lj.sh
+```
+
+**Common pull failures (CI build is usually fine):**
+
+- Wrong tag: use `sha-6224dd3-slurm`, not full 40-char SHA; new `-lj` uses `sha-<7hex>` without `-slurm`.
+- Wrong package: Lj training is **`-lj`**, not the vLLM eval package (except legacy tag above).
+- Host Python leak: `lj_ghcr_image_exec.sh` sets `PYTHONNOUSERSITE=1` and avoids `bash -l` so `~/.local`/conda do not shadow container torch.
+- Private GHCR: set `APPTAINER_DOCKER_USERNAME` / `APPTAINER_DOCKER_PASSWORD` (PAT `read:packages`) — forwarded through `srun` by the script.
+
+Bake local SIF: `apptainer build ~/containers/xplainverse-lj-training.sif apptainer/xplainverse-lj-training.def`
+
+See `scripts/LJ_TRAINING.md`, `docker/README.md`.
+
+### Local SIF fallback (`~/xplainverse_exec.sh`)
+
+Older `~/containers/xplainverse-acmchallenge.sif` may **lack** `flash_attn` and `deepspeed`. `train_vlm_full_lj.sh` then falls back to **sdpa, packing off, DDP**. Use **GHCR `-lj` image** for intended hyperparams (flash_attn, packing, zero2).
+
+```bash
+./scripts/lj_gpu_exec.sh bash scripts/train_vlm_full_lj.sh   # local SIF — sdpa fallback likely
+```
 
 ### Already on GPU node (Cursor tunnel / srun shell)
 
@@ -99,14 +146,17 @@ XPlainVerse images and manifests live on **local NVMe** on `elixir-lj-gpu-01`, n
 
 ## Training scripts (lj)
 
-- Full lj training: `scripts/train_vlm_full_lj.sh` (default 4 GPU, deepspeed zero2)
-- From login worker: `./scripts/lj_gpu_exec.sh bash scripts/train_vlm_full_lj.sh`
+- Full lj training: `scripts/train_vlm_full_lj.sh` (defaults: 4 GPU, flash_attn, packing, deepspeed zero2)
+- **Preferred:** `./scripts/lj_ghcr_image_exec.sh bash scripts/train_vlm_full_lj.sh` (GHCR `-lj` image)
+- Fallback local SIF: `./scripts/lj_gpu_exec.sh bash scripts/train_vlm_full_lj.sh` (often sdpa/DDP only)
 - Checkpoints default: `/home/jakob/luka/runs/vlm_full`
+- W&B: `REPORT_TO=wandb WANDB_RUN_NAME=vlm_full_lj_450k_1ep`
 
 ## Agent checklist before GPU work
 
-1. Confirm target: login → `lj_gpu_exec.sh`; on gpu node → `xplainverse_exec.sh`
+1. Confirm target: login → `lj_ghcr_image_exec.sh` (training) or `lj_gpu_exec.sh` (local SIF); on gpu node → `xplainverse_exec.sh` or `apptainer exec` directly
 2. Data root on GPU: `/primoz/luka/XPlainVerse/data/XPlainVerse` (not visible on login)
 3. Do not assume `import torch` works on the worker host
 4. Build JSONL / sanity checks via dispatch wrapper on GPU node (not host conda)
 5. Do not start multi-hour full training unless explicitly asked
+6. For flash + packing: use GHCR `-lj` (or legacy `sha-6224dd3-slurm`), not old local `.sif`
