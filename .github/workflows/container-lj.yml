@@ -1,7 +1,8 @@
 name: Build and push Ljubljana (cu121) container
 
-# Slurm / Apptainer-friendly tags: `latest-slurm`, `sha-<40hex>-slurm`
-# Image is built from docker/Dockerfile.lj (PyTorch cu121 + matching FlashAttention).
+# Slurm / Apptainer Lj training image — separate GHCR package from the CUDA 13 / vLLM eval image.
+# Package: ghcr.io/<owner>/<repo>-lj  tags: latest, sha-<7hex>
+# Built from docker/Dockerfile.lj (PyTorch cu121 + FlashAttention + deepspeed + ms-swift).
 
 on:
   push:
@@ -29,8 +30,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Image name (GHCR must be lowercase)
-        run: echo "IMAGE_NAME=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+      - name: Image name (separate Lj package; GHCR must be lowercase)
+        run: |
+          REPO_LC="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "IMAGE_NAME=ghcr.io/${REPO_LC}-lj" >> "$GITHUB_ENV"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -45,10 +48,8 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            # Always push latest-slurm so feature-branch CI builds are pullable on the cluster
-            # (Apptainer cannot pull without GHCR auth if the package is private).
-            type=raw,value=latest-slurm
-            type=sha,prefix=sha-,suffix=-slurm
+            type=raw,value=latest
+            type=sha,prefix=sha-
 
       - uses: docker/build-push-action@v6
         with:

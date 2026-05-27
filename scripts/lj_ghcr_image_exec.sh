@@ -2,7 +2,8 @@
 # Run a command on elixir-lj-gpu-01 inside the CI-built GHCR training image (Dockerfile.lj).
 # Uses Apptainer `docker://` (OCI) instead of ~/xplainverse_exec.sh + local .sif.
 #
-# Default image: ghcr.io/<lowercase repo>:latest-slurm (see .github/workflows/container-lj.yml).
+# Default image: ghcr.io/<lowercase repo>-lj:latest (see .github/workflows/container-lj.yml).
+# This is a separate GHCR package from the CUDA 13 / vLLM eval image (same repo name without -lj).
 #
 # Usage (Slurm login, repo root):
 #   chmod +x scripts/lj_ghcr_image_exec.sh
@@ -12,9 +13,8 @@
 #   export APPTAINER_DOCKER_USERNAME=TheLukaDragar
 #   export APPTAINER_DOCKER_PASSWORD=<classic PAT with read:packages>
 #
-# Feature-branch builds only had sha-*-slurm until workflow always tagged latest-slurm.
-# Override tag, e.g. from a green Actions run on commit 6224dd3:
-#   LJ_APPTAINER_IMAGE=docker://ghcr.io/thelukadragar/xplainverse-acmchallenge:sha-6224dd3ea06fc419852361163f1f1eedd72c9beb-slurm
+# Override tag from a green Actions run, e.g. commit 6224dd3 on the shared package (pre -lj split):
+#   LJ_APPTAINER_IMAGE=docker://ghcr.io/thelukadragar/xplainverse-acmchallenge:sha-6224dd3-slurm
 
 set -euo pipefail
 
@@ -27,7 +27,7 @@ GPU_CPUS="${LJ_GPU_CPUS:-16}"
 GPU_TIME="${LJ_GPU_TIME:-12:00:00}"
 
 DEFAULT_REPO_LC="$(echo "${GITHUB_REPOSITORY:-TheLukaDragar/XPlainVerse-ACMChallenge}" | tr '[:upper:]' '[:lower:]')"
-LJ_APPTAINER_IMAGE="${LJ_APPTAINER_IMAGE:-docker://ghcr.io/${DEFAULT_REPO_LC}:latest-slurm}"
+LJ_APPTAINER_IMAGE="${LJ_APPTAINER_IMAGE:-docker://ghcr.io/${DEFAULT_REPO_LC}-lj:latest}"
 APPTAINER_BIND="${LJ_APPTAINER_BIND:-${HOME}:${HOME},/primoz:/primoz}"
 
 if [[ $# -eq 0 ]]; then
@@ -38,8 +38,10 @@ fi
 
 run_inner() {
   cd "${PROJECT_DIR}"
+  export PYTHONNOUSERSITE=1
   exec apptainer exec --nv \
     -B "${APPTAINER_BIND}" \
+    --env PYTHONNOUSERSITE=1 \
     "${LJ_APPTAINER_IMAGE}" \
     "$@"
 }
@@ -67,11 +69,11 @@ if [[ -n "${APPTAINER_DOCKER_PASSWORD:-}" ]]; then
   _AUTH_EXPORT+="export APPTAINER_DOCKER_PASSWORD=$(printf '%q' "${APPTAINER_DOCKER_PASSWORD}"); "
 fi
 
-INNER="${_AUTH_EXPORT}cd $(printf '%q' "${PROJECT_DIR}") && exec apptainer exec --nv -B $(printf '%q' "${APPTAINER_BIND}") $(printf '%q' "${LJ_APPTAINER_IMAGE}")"
+INNER="${_AUTH_EXPORT}export PYTHONNOUSERSITE=1; cd $(printf '%q' "${PROJECT_DIR}") && exec apptainer exec --nv --env PYTHONNOUSERSITE=1 -B $(printf '%q' "${APPTAINER_BIND}") $(printf '%q' "${LJ_APPTAINER_IMAGE}")"
 for _a in "$@"; do
   INNER+=" $(printf '%q' "${_a}")"
 done
 
 exec srun -p "${PARTITION}" -w "${GPU_NODE}" -n1 \
   --gres="${GPU_GRES}" --mem="${GPU_MEM}" --cpus-per-task="${GPU_CPUS}" --time="${GPU_TIME}" \
-  bash -lc "${INNER}"
+  bash -c "${INNER}"

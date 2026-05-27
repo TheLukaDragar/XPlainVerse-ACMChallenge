@@ -11,7 +11,7 @@
 #   apptainer build out.sif docker://ghcr.io/<owner>/<repo>:sha-abcdef-slurm
 
 Bootstrap: docker
-From: ghcr.io/thelukadragar/xplainverse-acmchallenge:latest-slurm
+From: ghcr.io/thelukadragar/xplainverse-acmchallenge-lj:latest
 
 %labels
     Author XPlainVerse-ACMChallenge

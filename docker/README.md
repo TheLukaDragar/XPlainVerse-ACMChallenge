@@ -35,20 +35,20 @@ Override the wheel only if you change the Torch/CUDA line (pick a filename that 
 
 ### CI-built image (GitHub Actions)
 
-On pushes to the default branch (when `docker/Dockerfile.lj` or related paths change), workflow **`.github/workflows/container-lj.yml`** pushes to GHCR with a **Slurm-oriented suffix**:
+On pushes (when `docker/Dockerfile.lj` or related paths change), workflow **`.github/workflows/container-lj.yml`** pushes to a **separate GHCR package** from the CUDA 13 / vLLM eval image:
 
-| Tag pattern | Example |
-|-------------|---------|
-| `latest-slurm` | `ghcr.io/<owner>/<repo>:latest-slurm` (default branch only) |
-| `sha-<git>-slurm` | `ghcr.io/<owner>/<repo>:sha-abc123...-slurm` |
+| Package | Dockerfile | Tags |
+|---------|------------|------|
+| `ghcr.io/<owner>/<repo>-lj` | `docker/Dockerfile.lj` | `latest`, `sha-<7hex>` |
+| `ghcr.io/<owner>/<repo>` | `docker/Dockerfile` | `latest`, `sha-<7hex>` |
 
-Apptainer example:
+Apptainer example (Lj training):
 
 ```bash
-apptainer pull docker://ghcr.io/<owner>/<repo>:latest-slurm
+apptainer pull docker://ghcr.io/<owner>/<repo>-lj:latest
 ```
 
-Use a PAT with `read:packages` (or org credentials) where the cluster cannot use anonymous GHCR pulls.
+Legacy note: an early Lj build was pushed to the eval package with tag `sha-6224dd3-slurm`; use that tag only until the next `-lj` CI run.
 
 ## CI-published image
 

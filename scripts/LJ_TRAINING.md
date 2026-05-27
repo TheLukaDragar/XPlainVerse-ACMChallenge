@@ -46,13 +46,22 @@ Baseline-style balanced train (130k/class):
   ... --train-max-per-class 130000
 ```
 
-## GHCR training image (`latest-slurm`, Dockerfile.lj)
+## GHCR training image (`<repo>-lj`, Dockerfile.lj)
 
-CI pushes `ghcr.io/<lowercase-github-repo>:latest-slurm` (and `sha-*-slurm`). Run one-off checks **without** rebuilding your old `.sif`:
+CI pushes a **separate package** from the vLLM eval image: `ghcr.io/<lowercase-github-repo>-lj` with tags `latest` and `sha-<7hex>`.
+
+Run one-off checks **without** rebuilding your old `.sif`:
 
 ```bash
 LJ_GPU_TIME=00:45:00 LJ_GPU_GRES=gpu:1 ./scripts/lj_ghcr_image_exec.sh python3 -c \
   "import torch, flash_attn; print(torch.__version__, torch.cuda.device_count(), flash_attn.__version__)"
+```
+
+Until the next CI run on `-lj`, the green build from commit `6224dd3` lives under the **old combined package**:
+
+```bash
+LJ_APPTAINER_IMAGE=docker://ghcr.io/thelukadragar/xplainverse-acmchallenge:sha-6224dd3-slurm \
+  ./scripts/lj_ghcr_image_exec.sh python3 -c 'import torch, flash_attn, deepspeed; print(torch.__version__, flash_attn.__version__)'
 ```
 
 Optional: bake into a local SIF for Apptainer:
