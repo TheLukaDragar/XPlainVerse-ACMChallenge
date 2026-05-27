@@ -11,6 +11,52 @@ and hypothetical-prompt mix look the way they do. The design is informed by the
 official challenge scoring (see `../.cursor/rules/xplainverse-evaluation-metrics.mdc`)
 and by recent papers on VLM-based AI-image detection.
 
+## Eval pipeline (checkpoint → official scores)
+
+After SFT (or before GRPO), score a LoRA checkpoint on the real metric:
+
+```bash
+# 1. On the fast GPU machine — start the judge (once):
+./scripts/serve_reward_judge.sh
+
+# 2. On the train machine — infer + submit + evaluate:
+REWARD_BASE_URL=http://REWARD_HOST:8000/v1 \
+ADAPTERS=runs/vlm_sanity/v1-*/checkpoint-100 \
+NUM_SAMPLES=100 \
+./scripts/eval_checkpoint.sh
+```
+
+Without a remote judge, use local Qwen on a free GPU:
+
+```bash
+EVAL_BACKEND=transformers EVAL_DEVICE=cuda:0 ./scripts/eval_checkpoint.sh ...
+```
+
+**Single GPU (simplest):** infer and judge run one after another — no vLLM server:
+
+```bash
+./scripts/eval_checkpoint_one_gpu.sh
+# or explicitly:
+ADAPTERS=runs/vlm_sanity/v1-*/checkpoint-100 NUM_SAMPLES=16 ./scripts/eval_checkpoint_one_gpu.sh
+```
+
+Uses ~20 GB for VLM infer, then ~8 GB for Qwen3.5-4B eval. Fits on one A100 80GB.
+
+Outputs under `runs/eval/{checkpoint}_{timestamp}/`:
+- `infer.jsonl` — raw ms-swift infer
+- `submission.jsonl` — challenge format (`build_submission.py`)
+- `eval_results/final_scores.json` — official metrics
+
+**Note:** `simple_explanation` for fake rows uses a first-sentence placeholder until the
+compressor stage; fake `simple_overall` is not meaningful yet. Focus on `complex_*` scores.
+
+## GRPO (stage 2)
+
+After VLM SFT, see **[`docs/GRPO_REWARD_PLAN.md`](../docs/GRPO_REWARD_PLAN.md)** for:
+- expected gains (+0.05–0.10 on `complex_overall`),
+- online reward design (cached GT extractions + async Qwen coverage + local BERT/verdict),
+- implementation checklist and phased rollout.
+
 ## Contents
 
 | File | Purpose |
