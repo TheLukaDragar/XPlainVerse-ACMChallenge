@@ -98,7 +98,7 @@ echo
 for v in "${VARIANTS[@]}"; do
   echo "--- ${v} ---"
   if [[ -f "${EXP_DIR}/results/${v}/eval_results/final_scores.json" ]]; then
-    /usr/bin/python3 -c "import json; s=json.load(open('${EXP_DIR}/results/${v}/eval_results/final_scores.json')); print('\n'.join(f'  {k}: {s.get(k)}' for k in ['samples_completed','complex_overall_score','complex_entity_f1','complex_facts_f1','complex_bert_f1','simple_overall_score','simple_bert_f1','simple_sle_score']))"
+    /usr/bin/python3 -c "import json; s=json.load(open('${EXP_DIR}/results/${v}/eval_results/final_scores.json')); print('\n'.join(f'  {k}: {s.get(k)}' for k in ['samples_completed','detection_f1','complex_overall_score','complex_entity_f1','complex_evidence_f1','complex_bert_f1','simple_overall_score','explanation_score','simple_bert_f1','simple_sle_score']))"
   else
     echo "  MISSING"
   fi

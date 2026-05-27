@@ -156,11 +156,13 @@ with open(path, encoding="utf-8") as f:
     s = json.load(f)
 keys = [
     "samples_completed",
+    "detection_f1",
     "complex_overall_score",
     "complex_entity_f1",
-    "complex_facts_f1",
+    "complex_evidence_f1",
     "complex_bert_f1",
     "simple_overall_score",
+    "explanation_score",
 ]
 for k in keys:
     if k in s:

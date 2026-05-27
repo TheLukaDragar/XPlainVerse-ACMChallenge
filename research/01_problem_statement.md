@@ -56,7 +56,7 @@ Run on 32 val rows via `scripts/eval_checkpoint_one_gpu.sh`:
 |--------|-------|
 | `complex_overall_score` | **0.391** |
 | `complex_entity_f1` | 0.323 |
-| `complex_facts_f1` | 0.221 |
+| `complex_evidence_f1` | 0.221 |
 | `complex_bert_f1` | 0.649 |
 | `simple_overall_score` | 0.496 |
 | `simple_bert_f1` | 0.591 |
