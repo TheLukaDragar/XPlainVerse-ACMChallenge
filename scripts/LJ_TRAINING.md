@@ -12,8 +12,10 @@ Use the Apptainer SIF via `~/xplainverse_exec.sh` — not the host `(base)` cond
 
 ```bash
 ./scripts/lj_gpu_exec.sh python3 dataset/build_swift_jsonl.py \
-  --data-root /home/jakob/luka/data/XPlainVerse --output-dir dataset
+  --data-root /primoz/luka/XPlainVerse/data/XPlainVerse --output-dir dataset
 ```
+
+Data on **`elixir-lj-gpu-01` only:** `/primoz/luka/XPlainVerse/data/XPlainVerse` (not visible on the login node). `lj_gpu_exec.sh` bind-mounts `/primoz` into Apptainer.
 
 Detached Slurm batch (survives logout; same node/partition defaults as `lj_gpu_exec`):
 
@@ -115,7 +117,7 @@ LJ_GPU_TIME=01:00:00 ./scripts/lj_gpu_exec.sh bash -lc \
 |---|---|
 | Host code | `/home/jakob/luka/code/XPlainVerse-ACMChallenge` |
 | Container code | `/workspace/XPlainVerse-ACMChallenge` |
-| Images / manifests | `/home/jakob/luka/data/XPlainVerse` |
+| Images / manifests | `/primoz/luka/XPlainVerse/data/XPlainVerse` (GPU node; fallback `$HOME/luka/data/XPlainVerse`) |
 | Checkpoints | `/home/jakob/luka/runs/vlm_full` |
 
 ## Verify environment

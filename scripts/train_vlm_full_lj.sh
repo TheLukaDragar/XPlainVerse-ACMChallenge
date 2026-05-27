@@ -11,7 +11,7 @@
 #
 #   # 2) Build JSONL once (if dataset/*.jsonl missing) — inside container:
 #   python3 dataset/build_swift_jsonl.py \
-#     --data-root /home/jakob/luka/data/XPlainVerse \
+#     --data-root /primoz/luka/XPlainVerse/data/XPlainVerse \
 #     --output-dir dataset
 #   # For baseline-style 260k balanced train (130k/class):
 #   #   ... --train-max-per-class 130000
@@ -22,7 +22,7 @@
 # === From Slurm login node (this worker) ===
 #
 #   ./scripts/lj_gpu_exec.sh python3 dataset/build_swift_jsonl.py \
-#     --data-root /home/jakob/luka/data/XPlainVerse --output-dir dataset
+#     --data-root /primoz/luka/XPlainVerse/data/XPlainVerse --output-dir dataset
 #   ./scripts/lj_gpu_exec.sh bash scripts/train_vlm_full_lj.sh
 #
 # Smoke (tiny steps; see scripts/LJ_TRAINING.md):
@@ -35,7 +35,8 @@
 #
 #   Host code:        /home/jakob/luka/code/XPlainVerse-ACMChallenge
 #   Container code:   /workspace/XPlainVerse-ACMChallenge  (bind-mounted)
-#   Dataset (images): /home/jakob/luka/data/XPlainVerse     ($HOME bind → same path in container)
+#   Dataset (images): /primoz/luka/XPlainVerse/data/XPlainVerse  (GPU node NVMe; bind /primoz in Apptainer)
+#   Fallback:         /home/jakob/luka/data/XPlainVerse
 #   Checkpoints:      /home/jakob/luka/runs/vlm_full        (default OUTPUT_DIR)
 #
 # Override any default:
@@ -59,7 +60,13 @@ else
 fi
 
 CODE_ROOT="${CODE_ROOT:-${_CODE_DEFAULT}}"
-LJ_DATA_ROOT="${XPLAINVERSE_DATA_ROOT:-/home/jakob/luka/data/XPlainVerse}"
+if [[ -n "${XPLAINVERSE_DATA_ROOT:-}" ]]; then
+  LJ_DATA_ROOT="${XPLAINVERSE_DATA_ROOT}"
+elif [[ -d /primoz/luka/XPlainVerse/data/XPlainVerse/train ]]; then
+  LJ_DATA_ROOT="/primoz/luka/XPlainVerse/data/XPlainVerse"
+else
+  LJ_DATA_ROOT="/home/jakob/luka/data/XPlainVerse"
+fi
 LJ_RUNS_ROOT="${LJ_RUNS_ROOT:-/home/jakob/luka/runs}"
 
 # --- Container Python (HOME bind-mount must not shadow torch/ms-swift) ---

@@ -11,7 +11,10 @@
 set -euo pipefail
 
 REPO="${REPO:-${HOME}/luka/code/XPlainVerse-ACMChallenge}"
-DATA_ROOT="${DATA_ROOT:-${HOME}/luka/data/XPlainVerse}"
+DATA_ROOT="${DATA_ROOT:-/primoz/luka/XPlainVerse/data/XPlainVerse}"
+if [[ ! -d "${DATA_ROOT}/train" && -d "${HOME}/luka/data/XPlainVerse/train" ]]; then
+  DATA_ROOT="${HOME}/luka/data/XPlainVerse"
+fi
 PARTITION="${LJ_PARTITION:-elixir-interno}"
 GPU_NODE="${LJ_GPU_NODE:-elixir-lj-gpu-01.elixir.ul.si}"
 GPU_TIME="${LJ_GPU_TIME:-12:00:00}"
@@ -39,6 +42,8 @@ trap 'rm -f "${JOBFILE}"' EXIT
   echo "#SBATCH -o logs/hf_fetch/jsonl_build_full_%j.out"
   echo "#SBATCH -e logs/hf_fetch/jsonl_build_full_%j.err"
   echo "set -euo pipefail"
+  echo "export APPTAINER_BINDPATH=/primoz:/primoz"
+  echo "export SINGULARITY_BINDPATH=/primoz:/primoz"
   echo "exec \"${XEXEC}\" python3 dataset/build_swift_jsonl.py \\"
   echo "  --data-root \"${DATA_ROOT}\" --output-dir dataset"
 } > "${JOBFILE}"

@@ -22,7 +22,7 @@ GPU_TIME="${LJ_GPU_TIME:-12:00:00}"
 
 DEFAULT_REPO_LC="$(echo "${GITHUB_REPOSITORY:-TheLukaDragar/XPlainVerse-ACMChallenge}" | tr '[:upper:]' '[:lower:]')"
 LJ_APPTAINER_IMAGE="${LJ_APPTAINER_IMAGE:-docker://ghcr.io/${DEFAULT_REPO_LC}:latest-slurm}"
-APPTAINER_BIND="${LJ_APPTAINER_BIND:-${HOME}:${HOME}}"
+APPTAINER_BIND="${LJ_APPTAINER_BIND:-${HOME}:${HOME},/primoz:/primoz}"
 
 if [[ $# -eq 0 ]]; then
   echo "usage: $0 <command...>" >&2
