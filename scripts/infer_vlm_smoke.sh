@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Smoke infer on a few val rows with a LoRA checkpoint from train_vlm_sanity/full.
 #
+# Uses val_vlm_infer.jsonl (user-only prompts, no assistant targets) so inference
+# matches real submission conditions — no label leak from val_vlm.jsonl.
+#
 # IMPORTANT: pass --use_hf true so infer reuses the HuggingFace cache from training.
 # Without it, ms-swift defaults to ModelScope and re-downloads ~17GB.
 #
@@ -22,7 +25,7 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 MODEL="${MODEL:-Qwen/Qwen3-VL-8B-Instruct}"
 MODEL_TYPE="${MODEL_TYPE:-qwen3_vl}"
 USE_HF="${USE_HF:-true}"
-VAL_JSONL="${VAL_JSONL:-${CODE_ROOT}/dataset/val_vlm.jsonl}"
+VAL_JSONL="${VAL_JSONL:-${CODE_ROOT}/dataset/val_vlm_infer.jsonl}"
 NUM_SAMPLES="${NUM_SAMPLES:-8}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-512}"
 INFER_BACKEND="${INFER_BACKEND:-transformers}"
