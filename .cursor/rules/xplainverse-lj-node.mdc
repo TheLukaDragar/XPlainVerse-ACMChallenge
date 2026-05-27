@@ -35,6 +35,16 @@ Quick one-GPU check (shorter allocation):
 LJ_GPU_GRES=gpu:1 LJ_GPU_TIME=00:30:00 ./scripts/lj_gpu_exec.sh nvidia-smi
 ```
 
+### GHCR CI image (`latest-slurm`, Dockerfile.lj)
+
+To run inside the **GitHub-built** training image instead of the local `~/containers/*.sif`, use:
+
+```bash
+./scripts/lj_ghcr_image_exec.sh python3 -c 'import torch, flash_attn; print(torch.__version__, flash_attn.__version__)'
+```
+
+See `scripts/LJ_TRAINING.md` and `apptainer/xplainverse-lj-training.def` to bake `docker://ghcr.io/...:latest-slurm` into a `.sif`.
+
 ### Already on GPU node (Cursor tunnel / srun shell)
 
 If `hostname` contains `elixir-lj-gpu`, skip `lj_gpu_exec.sh` and use:

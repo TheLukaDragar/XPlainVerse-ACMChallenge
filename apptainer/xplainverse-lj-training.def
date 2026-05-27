@@ -1,0 +1,25 @@
+# Apptainer definition — Ljubljana training image from GHCR (Dockerfile.lj CI build).
+#
+# Build a local .sif (good for clusters that prefer a file path over docker:// at runtime):
+#
+#   mkdir -p ~/containers
+#   apptainer build ~/containers/xplainverse-lj-training.sif apptainer/xplainverse-lj-training.def
+#
+# Private GHCR: `apptainer remote login` or set env vars per site docs before build.
+#
+# Default URI is overridable:
+#   apptainer build out.sif docker://ghcr.io/<owner>/<repo>:sha-abcdef-slurm
+
+Bootstrap: docker
+From: ghcr.io/thelukadragar/xplainverse-acmchallenge:latest-slurm
+
+%labels
+    Author XPlainVerse-ACMChallenge
+    Description Lj training stack (torch cu121 + flash-attn + ms-swift)
+
+%post
+    # Image already validated in CI; avoid GPU-only imports here (build may run on login node).
+    echo "xplainverse-lj-training.sif built from GHCR"
+
+%runscript
+    exec "$@"

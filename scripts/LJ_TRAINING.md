@@ -44,6 +44,23 @@ Baseline-style balanced train (130k/class):
   ... --train-max-per-class 130000
 ```
 
+## GHCR training image (`latest-slurm`, Dockerfile.lj)
+
+CI pushes `ghcr.io/<lowercase-github-repo>:latest-slurm` (and `sha-*-slurm`). Run one-off checks **without** rebuilding your old `.sif`:
+
+```bash
+LJ_GPU_TIME=00:45:00 LJ_GPU_GRES=gpu:1 ./scripts/lj_ghcr_image_exec.sh python3 -c \
+  "import torch, flash_attn; print(torch.__version__, torch.cuda.device_count(), flash_attn.__version__)"
+```
+
+Optional: bake into a local SIF for Apptainer:
+
+```bash
+apptainer build ~/containers/xplainverse-lj-training.sif apptainer/xplainverse-lj-training.def
+```
+
+Private registry: set `APPTAINER_DOCKER_USERNAME` / `APPTAINER_DOCKER_PASSWORD` (PAT with `read:packages`) before pull/build, or use your site’s registry login.
+
 ## Full 4-GPU training (450k train, default hyperparams)
 
 Login node:
