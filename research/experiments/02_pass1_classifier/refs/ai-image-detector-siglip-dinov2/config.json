@@ -1,0 +1,36 @@
+{
+  "architecture": "EnsembleAIDetector",
+  "model_type": "ai-image-detector",
+  "backbone_siglip": "google/siglip2-so400m-patch14-384",
+  "backbone_dinov2": "vit_large_patch14_dinov2.lvd142m",
+  "image_size": 392,
+  "siglip_dim": 1152,
+  "dinov2_dim": 1024,
+  "combined_dim": 2176,
+  "classifier_hidden_dim": 512,
+  "classifier_dropout": 0.3,
+  "lora": {
+    "rank": 32,
+    "alpha": 64,
+    "dropout": 0.1,
+    "siglip_target_modules": [
+      "q_proj",
+      "v_proj"
+    ],
+    "dinov2_target_modules": [
+      "qkv"
+    ]
+  },
+  "training": {
+    "dataset": "OpenFake (shards 0-14)",
+    "epochs": 4,
+    "batch_size": 16,
+    "learning_rate": 0.0002,
+    "best_auc": 0.9997499999999999,
+    "best_step": 2000
+  },
+  "labels": {
+    "0": "real",
+    "1": "ai-generated"
+  }
+}

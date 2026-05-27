@@ -31,8 +31,8 @@ We start with the 1:1 balanced subset (260k) for the first run because the unbal
 | File | Purpose |
 |------|---------|
 | `build_manifest.py` | Convert train_vlm.jsonl + val_ground_truth.jsonl into image-path/label parquets |
-| `train_pass1.py` | DINOv3-Large + linear head training loop (HF Transformers + PEFT) |
-| `eval_pass1.py` | Run trained classifier on val, output per-sample probs + AUC/AP/F1 |
+| `train.py` | Pass-1 trainer — frozen VFM + linear head (+ optional LoRA); see `refs/` |
+| `eval.py` | Run trained checkpoint on val, output per-sample probs + AUC/AP/F1 |
 | `run.sh` | Launcher that chains build → train → eval |
 
 ## Decision rule (DO NOT LAUNCH UNTIL VALIDATION RESULT)

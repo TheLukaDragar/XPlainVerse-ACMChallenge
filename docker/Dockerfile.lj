@@ -51,6 +51,9 @@ RUN pip install 'deepspeed>=0.14.0'
 
 RUN pip install "qwen_vl_utils>=0.0.14" "decord>=0.6.0" jieba nltk rouge wandb
 
+# Pass-1 classifier (frozen VFM + linear head): manifests + metrics + optional LoRA
+RUN pip install scikit-learn peft pandas pyarrow
+
 # FlashAttention 2 — prebuilt for cu121 + torch 2.4 + cp310 (mjun0812 v0.3.11).
 ARG FLASH_ATTN_RELEASE=v0.3.11
 ARG FLASH_ATTN_WHEEL=flash_attn-2.8.0+cu121torch2.4-cp310-cp310-linux_x86_64.whl
