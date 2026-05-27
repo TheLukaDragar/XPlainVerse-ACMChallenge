@@ -45,7 +45,9 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest-slurm,enable={{is_default_branch}}
+            # Always push latest-slurm so feature-branch CI builds are pullable on the cluster
+            # (Apptainer cannot pull without GHCR auth if the package is private).
+            type=raw,value=latest-slurm
             type=sha,prefix=sha-,suffix=-slurm
 
       - uses: docker/build-push-action@v6

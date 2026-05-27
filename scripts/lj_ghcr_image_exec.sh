@@ -8,7 +8,13 @@
 #   chmod +x scripts/lj_ghcr_image_exec.sh
 #   LJ_GPU_TIME=00:45:00 ./scripts/lj_ghcr_image_exec.sh python3 -c 'import torch, flash_attn; print(torch.__version__, flash_attn.__version__)'
 #
-# Private GHCR: export APPTAINER_DOCKER_USERNAME=... APPTAINER_DOCKER_PASSWORD=<PAT with read:packages>
+# Private GHCR (required unless the package is public):
+#   export APPTAINER_DOCKER_USERNAME=TheLukaDragar
+#   export APPTAINER_DOCKER_PASSWORD=<classic PAT with read:packages>
+#
+# Feature-branch builds only had sha-*-slurm until workflow always tagged latest-slurm.
+# Override tag, e.g. from a green Actions run on commit 6224dd3:
+#   LJ_APPTAINER_IMAGE=docker://ghcr.io/thelukadragar/xplainverse-acmchallenge:sha-6224dd3ea06fc419852361163f1f1eedd72c9beb-slurm
 
 set -euo pipefail
 
@@ -48,8 +54,20 @@ if ! command -v srun >/dev/null 2>&1; then
 fi
 
 echo "Dispatching to ${GPU_NODE} (image=${LJ_APPTAINER_IMAGE})..." >&2
+if [[ -z "${APPTAINER_DOCKER_USERNAME:-}" || -z "${APPTAINER_DOCKER_PASSWORD:-}" ]]; then
+  echo "note: APPTAINER_DOCKER_USERNAME/PASSWORD unset — pull fails if GHCR package is private (401 → manifest unknown)." >&2
+fi
 
-INNER="cd $(printf '%q' "${PROJECT_DIR}") && exec apptainer exec --nv -B $(printf '%q' "${APPTAINER_BIND}") $(printf '%q' "${LJ_APPTAINER_IMAGE}")"
+# Forward GHCR creds to the GPU node (srun does not inherit login env by default).
+_AUTH_EXPORT=""
+if [[ -n "${APPTAINER_DOCKER_USERNAME:-}" ]]; then
+  _AUTH_EXPORT+="export APPTAINER_DOCKER_USERNAME=$(printf '%q' "${APPTAINER_DOCKER_USERNAME}"); "
+fi
+if [[ -n "${APPTAINER_DOCKER_PASSWORD:-}" ]]; then
+  _AUTH_EXPORT+="export APPTAINER_DOCKER_PASSWORD=$(printf '%q' "${APPTAINER_DOCKER_PASSWORD}"); "
+fi
+
+INNER="${_AUTH_EXPORT}cd $(printf '%q' "${PROJECT_DIR}") && exec apptainer exec --nv -B $(printf '%q' "${APPTAINER_BIND}") $(printf '%q' "${LJ_APPTAINER_IMAGE}")"
 for _a in "$@"; do
   INNER+=" $(printf '%q' "${_a}")"
 done
