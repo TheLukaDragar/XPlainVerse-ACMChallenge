@@ -26,7 +26,7 @@ Use the dispatch wrapper — it `srun`s to `elixir-lj-gpu-01` and runs inside Ap
 ./scripts/lj_gpu_exec.sh python3 -c 'import torch; print(torch.cuda.device_count())'
 ./scripts/lj_gpu_exec.sh bash scripts/train_vlm_full_lj.sh
 ./scripts/lj_gpu_exec.sh python3 dataset/build_swift_jsonl.py \
-  --data-root /home/jakob/luka/data/XPlainVerse --output-dir dataset
+  --data-root /primoz/luka/XPlainVerse/data/XPlainVerse --output-dir dataset
 ```
 
 Quick one-GPU check (shorter allocation):
@@ -64,9 +64,31 @@ If `hostname` contains `elixir-lj-gpu`, skip `lj_gpu_exec.sh` and use:
 | GPUs on node | 4× A100 80GB |
 | Container project | `/workspace/XPlainVerse-ACMChallenge` |
 | Host project | `~/luka/code/XPlainVerse-ACMChallenge` |
-| Dataset | `~/luka/data/XPlainVerse` |
+| **Dataset (canonical)** | **`/primoz/luka/XPlainVerse/data/XPlainVerse`** (GPU node local NVMe) |
+| Dataset fallback | `~/luka/data/XPlainVerse` (network `$HOME`; slow for JSONL scans) |
+| Checkpoints / runs | `~/luka/runs` (default `OUTPUT_DIR`) |
 
 Inside container: prompt `(xplainverse)`, banner `--- xplainverse container ---`.
+
+## Dataset on `/primoz` (GPU node only)
+
+XPlainVerse images and manifests live on **local NVMe** on `elixir-lj-gpu-01`, not on `$HOME`:
+
+| | Path |
+|---|---|
+| **Data root (`--data-root`)** | `/primoz/luka/XPlainVerse/data/XPlainVerse` |
+| Train manifest | `.../train/manifest.jsonl` (450k) |
+| Val manifest | `.../val/manifest.jsonl` (110k) |
+
+**Login node (`slurm`):** `/primoz` is **not mounted** — do not `ls /primoz` from the worker and assume data is missing. Always dispatch to the GPU node (`lj_gpu_exec.sh` / `sbatch` on `elixir-lj-gpu-01`).
+
+**Apptainer:** bind `/primoz` into the container. `scripts/lj_gpu_exec.sh` sets `APPTAINER_BINDPATH=/primoz:/primoz`. Without this, training/JSONL inside the SIF cannot read images.
+
+**JSONL:** `dataset/*.jsonl` under the repo should reference **absolute `/primoz/...` image paths** after a rebuild from the primoz data root (~minutes on NVMe vs hours over `$HOME`).
+
+**Env override:** `XPLAINVERSE_DATA_ROOT=/primoz/luka/XPlainVerse/data/XPlainVerse` (used by `scripts/train_vlm_full_lj.sh` when auto-detecting on GPU).
+
+**Do not** use `/primoz/luka/data/XPlainVerse` — the tree is `.../XPlainVerse/data/XPlainVerse/`.
 
 ## Slurm / tunnel context
 
@@ -84,6 +106,7 @@ Inside container: prompt `(xplainverse)`, banner `--- xplainverse container ---`
 ## Agent checklist before GPU work
 
 1. Confirm target: login → `lj_gpu_exec.sh`; on gpu node → `xplainverse_exec.sh`
-2. Do not assume `import torch` works on the worker host
-3. Build JSONL / sanity checks via dispatch wrapper if not on GPU node
-4. Do not start multi-hour full training unless explicitly asked
+2. Data root on GPU: `/primoz/luka/XPlainVerse/data/XPlainVerse` (not visible on login)
+3. Do not assume `import torch` works on the worker host
+4. Build JSONL / sanity checks via dispatch wrapper on GPU node (not host conda)
+5. Do not start multi-hour full training unless explicitly asked
