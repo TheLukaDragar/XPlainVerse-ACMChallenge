@@ -17,9 +17,10 @@ PARTITION="${LJ_PARTITION:-elixir-interno}"
 GPU_NODE="${LJ_GPU_NODE:-elixir-lj-gpu-01.elixir.ul.si}"
 PROJECT_DIR="${LJ_PROJECT_DIR:-${HOME}/luka/code/XPlainVerse-ACMChallenge}"
 GPU_GRES="${LJ_GPU_GRES:-gpu:4}"
-GPU_MEM="${LJ_GPU_MEM:-64G}"
-GPU_CPUS="${LJ_GPU_CPUS:-16}"
-GPU_TIME="${LJ_GPU_TIME:-12:00:00}"
+# elixir-lj-gpu-01 has 256 CPUs / ~2 TiB RAM; request a large slice for packing map + dataloaders.
+GPU_MEM="${LJ_GPU_MEM:-256G}"
+GPU_CPUS="${LJ_GPU_CPUS:-64}"
+GPU_TIME="${LJ_GPU_TIME:-48:00:00}"
 
 # Local NVMe dataset on elixir-lj-gpu-01 (not visible on login node).
 export APPTAINER_BINDPATH="${APPTAINER_BINDPATH:-/primoz:/primoz}"

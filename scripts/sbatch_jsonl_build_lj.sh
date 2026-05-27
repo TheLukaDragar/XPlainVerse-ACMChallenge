@@ -17,7 +17,7 @@ PARTITION="${LJ_PARTITION:-elixir-interno}"
 GPU_NODE="${LJ_GPU_NODE:-elixir-lj-gpu-01.elixir.ul.si}"
 GPU_TIME="${LJ_GPU_TIME:-12:00:00}"
 GPU_MEM="${LJ_GPU_MEM:-128G}"
-GPU_CPUS="${LJ_GPU_CPUS:-16}"
+GPU_CPUS="${LJ_GPU_CPUS:-32}"
 GPU_GRES="${LJ_GPU_GRES:-gpu:4}"
 XEXEC="${HOME}/xplainverse_exec.sh"
 

@@ -44,7 +44,7 @@
 #     ~/xplainverse_exec.sh bash scripts/train_vlm_full_lj.sh
 #
 #   REPORT_TO=tensorboard ./scripts/train_vlm_full_lj.sh
-#   PACKING=false PADDING_FREE=false ATTN_IMPL=sdpa ./scripts/train_vlm_full_lj.sh
+#   PACKING=false PADDING_FREE=false LAZY_TOKENIZE=true ATTN_IMPL=sdpa ./scripts/train_vlm_full_lj.sh
 #   PREDICT_WITH_GENERATE=false VAL_SLICE=2000 ./scripts/train_vlm_full_lj.sh
 #
 # Hyperparams match scripts/train_vlm_full.sh (ms-swift Qwen3-VL recipe).
@@ -128,10 +128,19 @@ SAVE_STEPS="${SAVE_STEPS:-400}"
 EVAL_STEPS="${EVAL_STEPS:-400}"
 LOGGING_STEPS="${LOGGING_STEPS:-10}"
 
+# Packing + padding_free need flash_attn (GHCR -lj image). lazy_tokenize is off when
+# packing is on (ms-swift 4.x: mutually exclusive). Data on /primoz NVMe keeps the
+# upfront map tractable; optional PACKING_CACHE on primoz speeds restarts.
 PACKING="${PACKING:-true}"
 PADDING_FREE="${PADDING_FREE:-true}"
+LAZY_TOKENIZE="${LAZY_TOKENIZE:-false}"
+PACKING_CACHE="${PACKING_CACHE:-}"
 DEEPSPEED="${DEEPSPEED:-zero2}"
 ATTN_IMPL="${ATTN_IMPL:-flash_attn}"
+
+# shellcheck source=lj_resources.sh
+source "${CODE_ROOT}/scripts/lj_resources.sh"
+lj_apply_cpu_defaults "${NPROC_PER_NODE}"
 
 PREDICT_WITH_GENERATE="${PREDICT_WITH_GENERATE:-true}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-512}"
@@ -186,10 +195,19 @@ if [[ -n "${MAX_STEPS}" ]]; then
 fi
 
 if [[ "${ATTN_IMPL}" == "flash_attn" ]] && ! python3 -c "import flash_attn" 2>/dev/null; then
-  echo "warning: flash_attn not importable; falling back to ATTN_IMPL=sdpa PACKING=false PADDING_FREE=false" >&2
+  echo "warning: flash_attn not importable; falling back to ATTN_IMPL=sdpa PACKING=false PADDING_FREE=false LAZY_TOKENIZE=true" >&2
   ATTN_IMPL=sdpa
   PACKING=false
   PADDING_FREE=false
+  LAZY_TOKENIZE=true
+fi
+
+if [[ "${PACKING}" == "true" ]]; then
+  LAZY_TOKENIZE=false
+  if [[ -z "${PACKING_CACHE}" ]] && [[ -d /primoz ]]; then
+    PACKING_CACHE="/primoz/luka/cache/ms_swift_packing"
+    mkdir -p "${PACKING_CACHE}" 2>/dev/null || PACKING_CACHE=""
+  fi
 fi
 
 # ms-swift calls transformers.require_version('deepspeed') when --deepspeed is set.
@@ -217,7 +235,9 @@ fi
 echo "max_length:          ${MAX_LENGTH}  lr: ${LEARNING_RATE}  rank: ${LORA_RANK}"
 echo "attn_impl:           ${ATTN_IMPL}"
 echo "deepspeed:           ${DEEPSPEED:-<off>}"
-echo "packing:             ${PACKING}  padding_free: ${PADDING_FREE}"
+echo "packing:             ${PACKING}  padding_free: ${PADDING_FREE}  lazy_tokenize: ${LAZY_TOKENIZE}"
+echo "packing_cache:       ${PACKING_CACHE:-<off>}"
+echo "cpus (alloc/total):  ${LJ_CPUS_TOTAL:-?}  dataset_num_proc: ${DATASET_NUM_PROC}  dataloader_workers/rank: ${DATALOADER_NUM_WORKERS}"
 echo "predict_with_gen:    ${PREDICT_WITH_GENERATE}  (max_new_tokens=${MAX_NEW_TOKENS})"
 echo "wandb_pred_callback: ${USE_PRED_CALLBACK}  (sample_n=${WANDB_SAMPLE_N})"
 echo "output:              ${OUTPUT_DIR}"
@@ -239,6 +259,11 @@ if [[ "${USE_PRED_CALLBACK}" == "true" ]]; then
   CALLBACK_FLAG=(--callbacks wandb_predictions)
 fi
 
+PACKING_CACHE_FLAG=()
+if [[ -n "${PACKING_CACHE}" ]]; then
+  PACKING_CACHE_FLAG=(--packing_cache "${PACKING_CACHE}")
+fi
+
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" \
 NPROC_PER_NODE="${NPROC_PER_NODE}" \
 swift sft \
@@ -252,6 +277,8 @@ swift sft \
   --attn_impl "${ATTN_IMPL}" \
   --packing "${PACKING}" \
   --padding_free "${PADDING_FREE}" \
+  --lazy_tokenize "${LAZY_TOKENIZE}" \
+  "${PACKING_CACHE_FLAG[@]}" \
   --max_length "${MAX_LENGTH}" \
   "${TRAIN_SCHEDULE_ARGS[@]}" \
   --per_device_train_batch_size "${PER_DEVICE_BS}" \
@@ -279,8 +306,8 @@ swift sft \
   --predict_with_generate "${PREDICT_WITH_GENERATE}" \
   --max_new_tokens "${MAX_NEW_TOKENS}" \
   --report_to ${REPORT_TO} \
-  --dataloader_num_workers 4 \
-  --dataset_num_proc 4 \
+  --dataloader_num_workers "${DATALOADER_NUM_WORKERS}" \
+  --dataset_num_proc "${DATASET_NUM_PROC}" \
   --load_from_cache_file true \
   --seed "${SEED}" \
   --output_dir "${OUTPUT_DIR}" \

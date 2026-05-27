@@ -87,7 +87,14 @@ GPU node (container shell):
 ~/xplainverse_exec.sh bash /workspace/XPlainVerse-ACMChallenge/scripts/train_vlm_full_lj.sh
 ```
 
-Defaults: `NPROC_PER_NODE=4`, `CUDA_VISIBLE_DEVICES=0,1,2,3`, `PER_DEVICE_BS=2`, `GRAD_ACCUM=4`, `--deepspeed zero2` **when the `deepspeed` package is installed**, else **DDP only** (see DeepSpeed section below), output `/home/jakob/luka/runs/vlm_full`.
+Defaults: `NPROC_PER_NODE=4`, `PER_DEVICE_BS=2`, `GRAD_ACCUM=4`, **packing + padding_free on** (needs `flash_attn` — use GHCR `-lj` image), `lazy_tokenize=false`, Slurm slice **64 CPUs / 256G** via `lj_gpu_exec.sh`, auto `dataset_num_proc` / `dataloader_num_workers` from allocation, optional packing cache on `/primoz/luka/cache/ms_swift_packing`, output `/home/jakob/luka/runs/vlm_full`.
+
+Full training dispatch (recommended):
+
+```bash
+LJ_GPU_GRES=gpu:4 LJ_GPU_MEM=256G LJ_GPU_CPUS=64 LJ_GPU_TIME=48:00:00 \
+  ./scripts/lj_ghcr_image_exec.sh bash scripts/train_vlm_full_lj.sh
+```
 
 ## Fallback (no flash_attn / packing issues)
 
