@@ -9,8 +9,8 @@
 #   lr_head=2e-4, lr_lora=5e-5, cosine+warmup, LoRA r32/α64, focal γ=2 α=0.25
 #   quality-agnostic aug (JPEG/blur/noise/resize jitter)
 #
-# Launch:
-#   LJ_GPU_GRES=gpu:2 LJ_GPU_TIME=12:00:00 \
+# Launch (4× A100 default):
+#   LJ_GPU_GRES=gpu:4 LJ_GPU_TIME=12:00:00 \
 #     ./scripts/lj_ghcr_image_exec.sh bash scripts/run_pass1_ensemble_bombek_lj.sh
 #
 # 10k eval after training:
@@ -31,8 +31,8 @@ EXP_DIR="${CODE_ROOT}/research/experiments/02_pass1_classifier"
 MANIFEST_DIR="${MANIFEST_DIR:-${EXP_DIR}/manifests}"
 LJ_RUNS_ROOT="${LJ_RUNS_ROOT:-/home/jakob/luka/runs}"
 
-NPROC_PER_NODE="${NPROC_PER_NODE:-2}"
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
+NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 export CUDA_VISIBLE_DEVICES PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
 
 _PASS1="${CODE_ROOT}/baseline_models/pass1"
@@ -96,7 +96,7 @@ _ARGS=(
 )
 
 export MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
-export MASTER_PORT="${MASTER_PORT:-29500}"
+export MASTER_PORT="${MASTER_PORT:-$((29500 + RANDOM % 1000))}"
 if [[ "${NPROC_PER_NODE}" -gt 1 ]]; then
   python3 -m torch.distributed.run \
     --nproc_per_node="${NPROC_PER_NODE}" \
