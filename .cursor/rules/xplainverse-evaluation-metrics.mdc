@@ -47,7 +47,7 @@ Example (woman with puppy on her shoulder, fake):
 
 Final complex score per image:
 
-**30% semantic similarity + 40% entity overlap + 30% facts overlap**
+**30% semantic similarity + 40% entity overlap + 30% evidence overlap**
 
 ---
 
@@ -314,11 +314,11 @@ The `matched_text` and `reason` fields are for transparency inside Qwen's respon
 
 **First call (recall):** Reference JSON from ground truth + your complex text.
 → "Did you cover what the reference said?"
-→ Produces `_gt_to_pred_entity` and `_gt_to_pred_fact`
+→ Produces `_gt_to_pred_entity` and `_gt_to_pred_evidence`
 
 **Second call (precision):** Reference JSON from your text + ground-truth complex text.
 → "Did the reference cover what you said?"
-→ Produces `_pred_to_gt_entity` and `_pred_to_gt_fact`
+→ Produces `_pred_to_gt_entity` and `_pred_to_gt_evidence`
 
 Both calls use the **identical coverage prompt template**. Only the JSON source and candidate text swap.
 
@@ -341,7 +341,7 @@ If you mention all five objects with paraphrases ("dog" for puppy, "her top" for
 
 ---
 
-### Part 3 — Facts overlap (30%)
+### Part 3 — Evidence overlap (30%)
 
 **What it does:** Same process as entities, but on **evidence claims** — the specific statements about what's wrong, not just the object names.
 
@@ -359,17 +359,17 @@ Your text covers the first two claims (soft fur, merge into shirt without shadow
 
 Reference → yours: 2/5 = 0.40  
 Yours → reference: 2/2 = 1.00  
-Facts F1 = **0.571**
+Evidence F1 = **0.571**
 
-**Entity vs facts in plain terms:**
+**Entity vs evidence in plain terms:**
 - **Entity** = *what* you point at ("the puppy", "the text on the banner")
-- **Facts** = *what's wrong with it* ("fur is too smooth", "text is garbled nonsense")
+- **Evidence** = *what's wrong with it* ("fur is too smooth", "text is garbled nonsense")
 
-You need both. Saying "there's a puppy" without explaining the fur/shadow problem helps entities a little but not facts.
+You need both. Saying "there's a puppy" without explaining the fur/shadow problem helps entities a little but not evidence.
 
 ---
 
-### The two Qwen prompts (entity + facts share these)
+### The two Qwen prompts (entity + evidence share these)
 
 **Extraction prompt** — Qwen reads one explanation and returns JSON:
 
@@ -426,7 +426,7 @@ The raw score is clipped to the range -1 to 4, then rescaled to 0–1 for the fi
 |--------|-------|-----|
 | Complex semantic | ~0.64 | Good paraphrase but missing three evidence blocks |
 | Complex entity | ~0.57 | 2 of 5 objects |
-| Complex facts | ~0.57 | 2 of 5 claims |
+| Complex evidence | ~0.57 | 2 of 5 claims |
 | Complex overall | ~0.59 | Weighted mix |
 | Simple semantic | ~0.73 | Captures sticker/pasted idea |
 | Simple simplicity | high | Short plain sentence |
@@ -450,4 +450,4 @@ The raw score is clipped to the range -1 to 4, then rescaled to 0–1 for the fi
 - Copy complex text into simple.
 - Invent objects or problems not in the image.
 
-Entity and facts overlap together are 70% of the complex score. Semantic similarity is only 30%. Listing all the right evidence beats fluent generic text.
+Entity and evidence overlap together are 70% of the complex score. Semantic similarity is only 30%. Listing all the right evidence beats fluent generic text.

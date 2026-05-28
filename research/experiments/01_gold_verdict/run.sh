@@ -15,7 +15,12 @@ set -euo pipefail
 WORKSPACE_ROOT=/shared/workspace/lrv/luka/XPlainVerse-ACMChallenge
 CODE_ROOT="${WORKSPACE_ROOT}/code/XPlainVerse-ACMChallenge"
 EXP_DIR="${CODE_ROOT}/research/experiments/01_gold_verdict"
-ADAPTERS="${WORKSPACE_ROOT}/runs/vlm_full/v1-20260524-214014/checkpoint-2400"
+# Default: oldest surviving checkpoint (2400 was pruned by save_total_limit=5).
+ADAPTERS="${ADAPTERS:-${WORKSPACE_ROOT}/runs/vlm_full/v1-20260524-214014/checkpoint-3600}"
+if [[ ! -d "${ADAPTERS}" ]]; then
+  echo "error: adapters checkpoint not found: ${ADAPTERS}" >&2
+  exit 1
+fi
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export LD_LIBRARY_PATH="/usr/local/lib/python3.10/dist-packages/nvidia/cu13/lib:${LD_LIBRARY_PATH:-}"
@@ -23,7 +28,11 @@ export TORCH_COMPILE_DISABLE=1
 export IMAGE_MAX_TOKEN_NUM=1024
 export MAX_PIXELS=1003520
 
-VARIANTS=(baseline conditioned structured)
+if [[ -n "${VARIANTS:-}" ]]; then
+  read -ra VARIANTS <<< "${VARIANTS}"
+else
+  VARIANTS=(baseline conditioned structured)
+fi
 
 mkdir -p "${EXP_DIR}/results"
 
@@ -98,7 +107,7 @@ echo
 for v in "${VARIANTS[@]}"; do
   echo "--- ${v} ---"
   if [[ -f "${EXP_DIR}/results/${v}/eval_results/final_scores.json" ]]; then
-    /usr/bin/python3 -c "import json; s=json.load(open('${EXP_DIR}/results/${v}/eval_results/final_scores.json')); print('\n'.join(f'  {k}: {s.get(k)}' for k in ['samples_completed','complex_overall_score','complex_entity_f1','complex_facts_f1','complex_bert_f1','simple_overall_score','simple_bert_f1','simple_sle_score']))"
+    /usr/bin/python3 -c "import json; s=json.load(open('${EXP_DIR}/results/${v}/eval_results/final_scores.json')); print('\n'.join(f'  {k}: {s.get(k)}' for k in ['samples_completed','detection_f1','complex_overall_score','complex_entity_f1','complex_evidence_f1','complex_bert_f1','simple_overall_score','explanation_score','simple_bert_f1','simple_sle_score']))"
   else
     echo "  MISSING"
   fi

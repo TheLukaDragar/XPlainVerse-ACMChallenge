@@ -1,0 +1,10 @@
+{
+  "samples_completed": 200,
+  "complex_bert_f1": 0.687576,
+  "complex_entity_f1": 0.322163,
+  "complex_facts_f1": 0.211104,
+  "complex_overall_score": 0.398469,
+  "simple_bert_f1": 0.645533,
+  "simple_sle_score": 0.826244,
+  "simple_overall_score": 0.561448
+}

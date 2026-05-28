@@ -33,7 +33,7 @@ Val ground truth: `evaluation/data/val_ground_truth.jsonl` (110,012 rows)
 
 See `.cursor/rules/xplainverse-evaluation-metrics.mdc` for full metric definitions, formulas, evaluator pipeline, and edge cases.
 
-Quick ref: complex = `0.3·BERT + 0.4·EntityF1 + 0.3·FactsF1`; simple = `0.7·BERT + 0.3·SLE_norm`. Task 1 metric not in public release yet.
+Quick ref: complex = `0.3·BERT + 0.4·EntityF1 + 0.3·EvidenceF1`; simple = `0.7·BERT + 0.3·SLE_norm`. Task 1 metric not in public release yet.
 
 ## Models (both already downloaded)
 

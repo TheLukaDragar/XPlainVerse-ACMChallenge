@@ -1,0 +1,1 @@
+{'num_prompt_tokens': 86900, 'num_generated_tokens': 18571, 'num_samples': 200, 'runtime': 1503.7658861200325, 'samples/s': 0.13299942620458924, 'tokens/s': 12.349661720227132}
