@@ -25,7 +25,9 @@ docker build -f docker/Dockerfile --build-arg MS_SWIFT_REF=vX.Y.Z -t xplainverse
 
 The default `docker/Dockerfile` targets **CUDA 13 + vLLM** and installs a FlashAttention wheel built for **`cu130` + `torch2.11`**. That wheel is **wrong** for an image built around **PyTorch `+cu121`** (e.g. `2.4.1+cu121` on elixir-lj-gpu): `pip` may succeed but **`import flash_attn` fails** or loads incompatible CUDA symbols.
 
-Use **`docker/Dockerfile.lj`** for a **cu121 + torch 2.4.1** stack and a matching prebuilt wheel (`flash_attn-2.8.0+cu121torch2.4`, [mjun0812 v0.3.11](https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.3.11)):
+Use **`docker/Dockerfile.lj`** for a **cu121 + torch 2.4.1** stack and a matching prebuilt wheel (`flash_attn-2.8.0+cu121torch2.4`, [mjun0812 v0.3.11](https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.3.11)).
+
+Also includes **timm** (`>=1.0.15`) for Pass-1 CNN/ViT full fine-tune experiments at 512×512.
 
 ```bash
 docker build -f docker/Dockerfile.lj -t xplainverse-lj-train:latest .
