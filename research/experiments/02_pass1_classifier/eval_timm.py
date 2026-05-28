@@ -12,7 +12,7 @@ import torch
 from timm.data import create_transform, resolve_model_data_config
 
 from train import load_manifest, run_validation
-from train_timm import TimmManifestDataset, build_timm_model
+from train_timm import TimmManifestDataset, build_timm_model, timm_data_config
 
 
 def main() -> None:
@@ -31,15 +31,12 @@ def main() -> None:
     model_name = run_args["model"]
     image_size = int(run_args["image_size"])
 
-    model = build_timm_model(model_name, 2, image_size, args.device)
+    model = build_timm_model(model_name, 2, args.device)
     model.load_state_dict(ckpt["model"])
     model.eval()
 
-    probe = build_timm_model(model_name, 2, image_size, "cpu")
-    data_config = resolve_model_data_config(probe)
-    data_config["input_size"] = (3, image_size, image_size)
+    data_config = timm_data_config(model_name, image_size)
     transform = create_transform(**data_config, is_training=False)
-    del probe
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)

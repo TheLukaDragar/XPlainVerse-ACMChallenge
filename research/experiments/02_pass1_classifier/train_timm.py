@@ -62,14 +62,18 @@ class TimmManifestDataset(Dataset):
         return tensor, int(row["label_int"]), row["sample_id"]
 
 
-def build_timm_model(model_name: str, num_classes: int, image_size: int, device: str) -> nn.Module:
-    model = timm.create_model(
-        model_name,
-        pretrained=True,
-        num_classes=num_classes,
-        img_size=image_size,
-    )
+def build_timm_model(model_name: str, num_classes: int, device: str) -> nn.Module:
+    """Load timm classifier. Resolution is set via transforms, not create_model kwargs."""
+    model = timm.create_model(model_name, pretrained=True, num_classes=num_classes)
     return model.to(device)
+
+
+def timm_data_config(model_name: str, image_size: int) -> dict:
+    probe = timm.create_model(model_name, pretrained=False, num_classes=2)
+    data_config = resolve_model_data_config(probe)
+    data_config["input_size"] = (3, image_size, image_size)
+    del probe
+    return data_config
 
 
 def save_best_checkpoint(
@@ -133,14 +137,11 @@ def train(args: argparse.Namespace) -> None:
         print(f"  train      : {len(df_train)} rows")
         print(f"  val        : {len(df_val)} rows")
 
-    probe = build_timm_model(args.model, 2, args.image_size, "cpu")
-    data_config = resolve_model_data_config(probe)
-    data_config["input_size"] = (3, args.image_size, args.image_size)
+    data_config = timm_data_config(args.model, args.image_size)
     train_tf = create_transform(**data_config, is_training=bool(args.augment))
     val_tf = create_transform(**data_config, is_training=False)
-    del probe
 
-    model = build_timm_model(args.model, 2, args.image_size, args.device)
+    model = build_timm_model(args.model, 2, args.device)
     for param in model.parameters():
         param.requires_grad = True
 
