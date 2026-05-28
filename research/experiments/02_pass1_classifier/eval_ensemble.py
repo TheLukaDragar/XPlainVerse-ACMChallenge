@@ -48,11 +48,6 @@ def main() -> None:
     siglip_id = cfg.get("siglip_model") or cfg.get("siglip", "google/siglip2-so400m-patch14-384")
 
     processor = AutoProcessor.from_pretrained(siglip_id)
-    size = {"height": image_size, "width": image_size}
-    if hasattr(processor, "size"):
-        processor.size = size
-    if hasattr(processor, "crop_size") and processor.crop_size:
-        processor.crop_size = size
 
     df = load_manifest(args.manifest, args.slice, seed=0)
     loader = torch.utils.data.DataLoader(

@@ -205,12 +205,9 @@ def train(args: argparse.Namespace) -> None:
         print(f"  train      : {len(df_train)} rows")
         print(f"  val        : {len(df_val)} rows")
 
+    # SigLIP2-SO400M is patch14-384 — keep native 384 preprocessing (Bombek uses
+    # AutoProcessor defaults for SigLIP; only DINOv2 is resized to image_size).
     siglip_processor = AutoProcessor.from_pretrained(args.siglip)
-    size = {"height": args.image_size, "width": args.image_size}
-    if hasattr(siglip_processor, "size"):
-        siglip_processor.size = size
-    if hasattr(siglip_processor, "crop_size") and siglip_processor.crop_size:
-        siglip_processor.crop_size = size
 
     dinov2_tf = dinov2_transform(args.image_size)
     train_aug = QualityAgnosticAugment() if args.augment else None

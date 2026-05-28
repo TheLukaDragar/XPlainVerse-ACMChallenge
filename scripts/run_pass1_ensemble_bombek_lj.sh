@@ -4,7 +4,8 @@
 # Reference: refs/ai-image-detector-siglip-dinov2/ (HF Bombek1/ai-image-detector-siglip-dinov2)
 #
 # Hyperparams (OpenFake):
-#   392×392, 5 epochs, batch 16/GPU, grad_accum 4 (2 GPU → eff 128; use GRAD_ACCUM=9 on 1 GPU → 144)
+#   DINOv2 @ 392×392, SigLIP2 @ native 384 (patch14-384), 5 epochs, batch 16/GPU,
+#   grad_accum 4 (2 GPU → eff 128; use GRAD_ACCUM=9 on 1 GPU → 144)
 #   lr_head=2e-4, lr_lora=5e-5, cosine+warmup, LoRA r32/α64, focal γ=2 α=0.25
 #   quality-agnostic aug (JPEG/blur/noise/resize jitter)
 #
