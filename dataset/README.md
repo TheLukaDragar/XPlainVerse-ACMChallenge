@@ -84,10 +84,10 @@ JSONL rows follow the ms-swift custom-dataset format
 
 ### TL;DR — what the scoring rewards
 
-`complex_overall = 0.3 · BERTScore + 0.4 · EntityF1 + 0.3 · EvidenceF1`,
+`complex_overall = 0.3 · BERTScore + 0.4 · EntityF1 + 0.3 · FactsF1`,
 `simple_overall = 0.7 · BERTScore + 0.3 · SLE_norm`.
 
-`EntityF1 + EvidenceF1 = 70 %` of the complex score. Both are computed by
+`EntityF1 + FactsF1 = 70 %` of the complex score. Both are computed by
 Qwen3.5-4B comparing the *evidence objects* and *atomic visual claims* in
 your text against the ground-truth paragraph. So the only way to win is to
 **name several specific objects in the image and describe what is wrong (or
@@ -126,7 +126,7 @@ GT statistics from val:
    ([2, Table 2]).
 
 4. **Ask for 4–6 named objects in one paragraph.** This is direct
-   shaping toward GT style and toward `entity_f1` / `evidence_f1`, which
+   shaping toward GT style and toward `entity_f1` / `facts_f1`, which
    reward enumeration. FakeVLM [1] confirms that
    *label + free-form explanation* beats *label-only* even for the
    classification accuracy itself (§4.1, "Does the image look real/fake?"

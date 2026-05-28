@@ -18,17 +18,3 @@ scripts/agent_tasks/logs/
 
 # Generated SSH deploy keys (see .github/SSH_GITHUB_SETUP.md)
 .github/local-secrets/
-
-# Transient runtime files
-*.pid
-
-# Generated Pass-1 classifier manifests (rebuild: research/experiments/02_pass1_classifier/build_manifest.py)
-research/experiments/02_pass1_classifier/manifests/
-
-# Cursor IDE chat exports (sometimes saved at repo root by accident)
-cursor_*.md
-
-# Stray sample images at repo root
-/*.png
-/*.webp
-/*.jpg

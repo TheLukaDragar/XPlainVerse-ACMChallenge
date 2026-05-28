@@ -14,11 +14,11 @@ Related:
 **SFT optimizes token likelihood / rouge.** The leaderboard optimizes:
 
 ```
-complex_overall = 0.30 · BERT + 0.40 · EntityF1 + 0.30 · EvidenceF1
+complex_overall = 0.30 · BERT + 0.40 · EntityF1 + 0.30 · FactsF1
 simple_overall  = 0.70 · BERT + 0.30 · SLE_norm
 ```
 
-Entity + evidence = **70% of complex score**. Both require Qwen3.5-4B to extract evidence objects and atomic claims, then check bidirectional coverage.
+Entity + facts = **70% of complex score**. Both require Qwen3.5-4B to extract evidence objects and atomic claims, then check bidirectional coverage.
 
 **Observed SFT gap (100-step sanity smoke, 8 samples):**
 - Verdict match: ~6–7/8 (often correct)
@@ -81,7 +81,7 @@ Reuse `evaluation/utils/llm_helpers.get_bert_scorer()`. Batch across the GRPO gr
 | Signal | Weight | Qwen calls | Notes |
 |--------|--------|------------|-------|
 | **Entity recall (GT→pred)** | 0.25 | 1 coverage | Cached GT extraction JSON + candidate complex text |
-| **Evidence recall (GT→pred)** | 0.20 | *(same call)* | From same coverage response: `claim_coverage` |
+| **Facts recall (GT→pred)** | 0.20 | *(same call)* | From same coverage response: `claim_coverage` |
 | **Precision (pred→GT)** | 0.15 | 1 coverage *(optional)* | Extract pred once per unique completion; coverage vs GT text |
 
 **Default online (2 Qwen calls):**
@@ -92,9 +92,9 @@ Reuse `evaluation/utils/llm_helpers.get_bert_scorer()`. Batch across the GRPO gr
 
 ```
 entity_proxy = entity_coverage_gt_to_pred
-evidence_proxy  = claim_coverage_gt_to_pred
+facts_proxy  = claim_coverage_gt_to_pred
 entity_f1 ≈ entity_proxy   (assume precision ≈ 1 early in training)
-evidence_f1  ≈ evidence_proxy
+facts_f1  ≈ facts_proxy
 ```
 
 Start with 1-call mode for micro-runs; enable 2-call mode once throughput is benchmarked.
@@ -108,7 +108,7 @@ def complex_reward(r):
     return (
         0.30 * r.bert_f1
         + 0.40 * harmonic_mean(r.entity_recall, r.entity_precision)
-        + 0.30 * harmonic_mean(r.evidence_recall, r.evidence_precision)
+        + 0.30 * harmonic_mean(r.facts_recall, r.facts_precision)
     )
 ```
 
@@ -275,7 +275,7 @@ After each GRPO checkpoint:
 |--------|-----------------------------------|-------------|
 | `complex_overall` | TBD | +0.05–0.10 |
 | `complex_entity_f1` | TBD | +0.10–0.15 |
-| `complex_evidence_f1` | TBD | +0.08–0.12 |
+| `complex_facts_f1` | TBD | +0.08–0.12 |
 | `complex_bert_f1` | TBD | +0.02–0.05 |
 | Verdict accuracy | TBD | maintain ±1% |
 

@@ -1,1 +1,0 @@
-Wrote 200 submission rows → /shared/workspace/lrv/luka/XPlainVerse-ACMChallenge/code/XPlainVerse-ACMChallenge/research/experiments/01_gold_verdict/results/baseline/submission.jsonl
