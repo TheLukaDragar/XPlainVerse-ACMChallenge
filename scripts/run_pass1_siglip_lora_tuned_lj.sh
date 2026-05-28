@@ -15,7 +15,7 @@
 set -euo pipefail
 
 _CODE="${HOME}/luka/code/XPlainVerse-ACMChallenge"
-if [[ -d /workspace/XPlainVerse-ACMChallenge ]]; then
+if [[ ! -d "${_CODE}/research" ]] && [[ -d /workspace/XPlainVerse-ACMChallenge ]]; then
   _CODE="/workspace/XPlainVerse-ACMChallenge"
 fi
 
