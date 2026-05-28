@@ -31,6 +31,7 @@ def load_checkpoint(ckpt_path: Path, device: str) -> tuple[nn.Module, dict]:
         bool(run_args.get("lora")),
         run_args.get("lora_r", 16),
         run_args.get("lora_alpha", 32),
+        run_args.get("lora_dropout", 0.05),
         device,
     )
     if run_args.get("lora"):
