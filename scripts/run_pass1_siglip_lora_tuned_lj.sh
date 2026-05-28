@@ -30,7 +30,10 @@ export LR_BACKBONE="${LR_BACKBONE:-5e-5}"
 export LR_SCHEDULE="${LR_SCHEDULE:-cosine}"
 export WARMUP_RATIO="${WARMUP_RATIO:-0.05}"
 export EPOCHS="${EPOCHS:-4}"
-export BATCH_SIZE="${BATCH_SIZE:-64}"
+# r32 LoRA + SigLIP2-giant @ 384px OOMs at bs 64/GPU on A100 80GB (~77 GiB used).
+# bs 32/GPU (eff 64 on 2 GPU) matches Run A memory; use 4 GPU for eff 128 if needed.
+export BATCH_SIZE="${BATCH_SIZE:-32}"
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export NPROC_PER_NODE="${NPROC_PER_NODE:-2}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
 export VAL_SLICE="${VAL_SLICE:-10000}"
