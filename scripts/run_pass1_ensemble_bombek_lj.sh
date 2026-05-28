@@ -56,7 +56,24 @@ TRAIN_MANIFEST="${TRAIN_MANIFEST:-${MANIFEST_DIR}/manifest_train_balanced.parque
 
 _RUN_TS="$(date -u +%Y%m%d-%H%M%S)"
 OUTPUT_DIR="${OUTPUT_DIR:-${LJ_RUNS_ROOT}/pass1_ensemble/bombek_so400m_dinov2_${_RUN_TS}}"
+
+REPORT_TO="${REPORT_TO:-wandb}"
+export WANDB_ENTITY="${WANDB_ENTITY:-luka_borut}"
+export WANDB_PROJECT="${WANDB_PROJECT:-XPlainVerse-ACMChallenge}"
 export WANDB_RUN_NAME="${WANDB_RUN_NAME:-pass1_ensemble_bombek_${_RUN_TS}}"
+export WANDB_TAGS="${WANDB_TAGS:-pass1,ensemble,bombek,${NPROC_PER_NODE}gpu}"
+
+if [[ "${REPORT_TO}" == *wandb* ]] && [[ -z "${WANDB_API_KEY:-}" ]]; then
+  if wandb status 2>/dev/null | grep -q '"api_key": null'; then
+    echo "warning: wandb not logged in. Run: wandb login  (or set WANDB_API_KEY, or REPORT_TO=none)" >&2
+  fi
+fi
+
+if [[ "${REPORT_TO}" == *wandb* ]]; then
+  ENSEMBLE_REPORT_TO=wandb
+else
+  ENSEMBLE_REPORT_TO=none
+fi
 
 if [[ ! -f "${TRAIN_MANIFEST}" ]]; then
   CODE_ROOT="${CODE_ROOT}" MANIFEST_DIR="${MANIFEST_DIR}" python3 "${EXP_DIR}/build_manifest.py"
@@ -73,6 +90,11 @@ echo "  batch/gpu  : ${BATCH_SIZE}  grad_accum=${GRAD_ACCUM}  (effective ${EFF})
 echo "  epochs     : ${EPOCHS}  lr_head=${LR_HEAD}  lr_lora=${LR_LORA}"
 echo "  lora       : r=${LORA_R} alpha=${LORA_ALPHA} dropout=${LORA_DROPOUT}"
 echo "  output     : ${OUTPUT_DIR}"
+if [[ "${REPORT_TO}" == *wandb* ]]; then
+  echo "  wandb      : ${WANDB_ENTITY}/${WANDB_PROJECT} (${WANDB_RUN_NAME})"
+else
+  echo "  wandb      : off (REPORT_TO=${REPORT_TO})"
+fi
 echo
 
 cd "${EXP_DIR}"
@@ -92,7 +114,7 @@ _ARGS=(
   --lora-alpha "${LORA_ALPHA}"
   --lora-dropout "${LORA_DROPOUT}"
   --val-slice "${VAL_SLICE}"
-  --report-to "${REPORT_TO:-wandb}"
+  --report-to "${ENSEMBLE_REPORT_TO}"
 )
 
 export MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
