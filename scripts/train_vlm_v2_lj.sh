@@ -200,9 +200,19 @@ if [[ "${PACKING}" == "true" ]]; then
   fi
 fi
 
+# ms-swift's `swift sft --help` only prints a stub (args are dataclass fields),
+# so probe argument support by grepping the installed ms-swift source instead.
+_SWIFT_DIR="$(python3 -c 'import os,swift; print(os.path.dirname(swift.__file__))' 2>/dev/null || true)"
+swift_supports_arg() {
+  # Conservative: if we cannot locate the source, assume the arg IS supported
+  # (the pinned lj container ships a recent ms-swift with all of these).
+  [[ -z "${_SWIFT_DIR}" ]] && return 0
+  grep -rqoE "\b$1\b" "${_SWIFT_DIR}" 2>/dev/null
+}
+
 # Some ms-swift builds (e.g. the torch 2.11 SIF) do not expose --packing_cache.
 # Drop it rather than crash with "remaining_argv: ['--packing_cache', ...]".
-if [[ -n "${PACKING_CACHE}" ]] && ! swift sft --help 2>/dev/null | grep -q -- '--packing_cache'; then
+if [[ -n "${PACKING_CACHE}" ]] && ! swift_supports_arg packing_cache; then
   echo "note: this ms-swift build has no --packing_cache; disabling cache flag." >&2
   PACKING_CACHE=""
 fi
@@ -274,15 +284,14 @@ fi
 # Separate LR for the vision tower / aligner when unfrozen. Guard the flags in
 # case the installed ms-swift build does not expose them (older releases).
 VIT_LR_FLAG=()
-_SFT_HELP="$(swift sft --help 2>/dev/null || true)"
 if [[ -n "${VIT_LR}" ]]; then
-  if grep -q -- '--vit_lr' <<<"${_SFT_HELP}"; then
+  if swift_supports_arg vit_lr; then
     VIT_LR_FLAG+=(--vit_lr "${VIT_LR}")
   else
     echo "note: ms-swift has no --vit_lr; ViT will train at --learning_rate=${LEARNING_RATE}." >&2
   fi
 fi
-if [[ -n "${ALIGNER_LR}" ]] && grep -q -- '--aligner_lr' <<<"${_SFT_HELP}"; then
+if [[ -n "${ALIGNER_LR}" ]] && swift_supports_arg aligner_lr; then
   VIT_LR_FLAG+=(--aligner_lr "${ALIGNER_LR}")
 fi
 
