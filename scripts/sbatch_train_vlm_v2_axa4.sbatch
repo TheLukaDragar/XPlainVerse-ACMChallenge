@@ -1,23 +1,23 @@
 #!/bin/bash
-# Qwen3-VL v2 SFT on Frida — aga node (4 × A100 40GB).
+# Qwen3-VL v2 SFT on Frida — axa node (8 × A100 40GB, use 4).
 #
-# NOTE: aga had NCCL/GPU-reset failures in May 2026. Prefer axa:
+# aga had NCCL/GPU-reset failures May 2026; axa is the fallback 4×A100 node.
+#
+# Submit:
 #   sbatch scripts/sbatch_train_vlm_v2_axa4.sbatch
 #
-# Effective batch 32: per_device=2 × 4 GPUs × grad_accum=4
-#
-#SBATCH --job-name=xpv-vlm-v2-aga4
+#SBATCH --job-name=xpv-vlm-v2-axa4
 #SBATCH --partition=frida
 #SBATCH --nodes=1
-#SBATCH --nodelist=aga
+#SBATCH --nodelist=axa
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:A100:4
 #SBATCH --cpus-per-task=96
-#SBATCH --mem=400G
+#SBATCH --mem=850G
 #SBATCH --time=7-00:00:00
-#SBATCH --output=/shared/workspace/lrv/luka/XPlainVerse-ACMChallenge/runs/slurm_vlm_v2_aga4_%j.out
-#SBATCH --error=/shared/workspace/lrv/luka/XPlainVerse-ACMChallenge/runs/slurm_vlm_v2_aga4_%j.err
+#SBATCH --output=/shared/workspace/lrv/luka/XPlainVerse-ACMChallenge/runs/slurm_vlm_v2_axa4_%j.out
+#SBATCH --error=/shared/workspace/lrv/luka/XPlainVerse-ACMChallenge/runs/slurm_vlm_v2_axa4_%j.err
 
 set -euo pipefail
 
@@ -27,7 +27,6 @@ CONTAINER=docker://ghcr.io/thelukadragar/xplainverse-acmchallenge:latest
 
 mkdir -p "${WORKSPACE_ROOT}/runs"
 
-# Load W&B key from login-node ~/.netrc for the root-run container.
 if [[ -z "${WANDB_API_KEY:-}" && -f "${HOME}/.netrc" ]]; then
   WANDB_API_KEY="$(python3 - "${HOME}/.netrc" <<'PY'
 import netrc, sys
@@ -44,13 +43,11 @@ if [[ -z "${WANDB_API_KEY:-}" ]]; then
 fi
 export WANDB_API_KEY
 
-echo "=== sbatch_train_vlm_v2_aga4 ==="
+echo "=== sbatch_train_vlm_v2_axa4 ==="
 echo "job:        ${SLURM_JOB_ID}"
 echo "nodes:      ${SLURM_JOB_NODELIST}"
 echo "master:     127.0.0.1 (single-node loopback)"
-echo "ntasks:     ${SLURM_NTASKS:-?}"
 echo "container:  ${CONTAINER}"
-echo "workspace:  ${WORKSPACE_ROOT}"
 echo "wandb:      key loaded (${#WANDB_API_KEY} chars)"
 echo "started:    $(date -Is)"
 echo
@@ -70,8 +67,8 @@ srun \
     export NPROC_PER_NODE=4
     export PER_DEVICE_BS=2
     export GRAD_ACCUM=4
-    export OUTPUT_DIR=${WORKSPACE_ROOT}/runs/vlm_v2_aga4
-    export WANDB_RUN_NAME=vlm_v2_aga4_1ep
+    export OUTPUT_DIR=${WORKSPACE_ROOT}/runs/vlm_v2_axa4
+    export WANDB_RUN_NAME=vlm_v2_axa4_1ep
     export ADD_VERSION=false
     chmod +x ${CODE_ROOT}/scripts/train_vlm_v2_frida.sh
     exec ${CODE_ROOT}/scripts/train_vlm_v2_frida.sh

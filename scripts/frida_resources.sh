@@ -99,10 +99,19 @@ frida_resolve_master_addr() {
 
 # NCCL defaults for single-node PCIe GPU boxes (aga/ana/axa).
 frida_export_nccl_env() {
+  local nnodes="${1:-${NNODES:-1}}"
+
   export NCCL_IB_DISABLE="${NCCL_IB_DISABLE:-1}"
-  export NCCL_SOCKET_IFNAME="${NCCL_SOCKET_IFNAME:-^lo,docker0,virbr0}"
+  export NCCL_P2P_DISABLE="${NCCL_P2P_DISABLE:-1}"
+  export NCCL_NVLS_ENABLE="${NCCL_NVLS_ENABLE:-0}"
   export TORCH_NCCL_ASYNC_ERROR_HANDLING="${TORCH_NCCL_ASYNC_ERROR_HANDLING:-1}"
   export TORCH_NCCL_BLOCKING_WAIT="${TORCH_NCCL_BLOCKING_WAIT:-1}"
+
+  if [[ "${nnodes}" -eq 1 ]]; then
+    export NCCL_SOCKET_IFNAME="${NCCL_SOCKET_IFNAME:-lo}"
+  else
+    export NCCL_SOCKET_IFNAME="${NCCL_SOCKET_IFNAME:-^lo,docker0,virbr0}"
+  fi
 }
 
 # Load W&B key for Pyxis containers that run as root with HOME=/root.
