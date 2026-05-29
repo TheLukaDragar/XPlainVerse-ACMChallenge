@@ -1,6 +1,9 @@
 # Generated ms-swift JSONL (rebuild: python3 dataset/build_swift_jsonl.py)
 dataset/*.jsonl
 
+# Generated Pass-1 classifier manifests (rebuild: build_manifest.py)
+research/experiments/02_pass1_classifier/manifests/
+
 # Python
 __pycache__/
 *.py[cod]
