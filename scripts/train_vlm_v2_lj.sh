@@ -189,6 +189,13 @@ if [[ "${PACKING}" == "true" ]]; then
   fi
 fi
 
+# Some ms-swift builds (e.g. the torch 2.11 SIF) do not expose --packing_cache.
+# Drop it rather than crash with "remaining_argv: ['--packing_cache', ...]".
+if [[ -n "${PACKING_CACHE}" ]] && ! swift sft --help 2>/dev/null | grep -q -- '--packing_cache'; then
+  echo "note: this ms-swift build has no --packing_cache; disabling cache flag." >&2
+  PACKING_CACHE=""
+fi
+
 # ms-swift calls transformers.require_version('deepspeed') when --deepspeed is set.
 if [[ -n "${DEEPSPEED:-}" ]] && ! python3 -c "import importlib.metadata as m; m.version('deepspeed')" 2>/dev/null; then
   echo "warning: deepspeed distribution not found; multi-GPU will use DDP without ZeRO." >&2
