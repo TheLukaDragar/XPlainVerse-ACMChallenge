@@ -17,7 +17,9 @@
 #   VERDICT_SOURCE  ensemble | gt        (default ensemble)
 #   N               number of val samples (default 1000, balanced real/fake)
 #   ENS_CKPT        ensemble ckpt.pt
-#   THRESHOLD       p_fake decision threshold for ensemble (default 0.5)
+#   THRESHOLD       p_fake decision threshold for ensemble. Default "auto" =
+#                   F1-optimal threshold calibrated on the val sample
+#                   (eval_ensemble.py thr_best_f1). Set a number to override.
 #   SIMPLE_MODE     first_sentence | match_verdict | copy (default first_sentence)
 #   OUT_DIR         results dir
 set -euo pipefail
@@ -49,7 +51,7 @@ ADAPTERS="${ADAPTERS:-/home/jakob/luka/runs/vlm_v2/run-20260529-104845/checkpoin
 VERDICT_SOURCE="${VERDICT_SOURCE:-ensemble}"
 N="${N:-1000}"
 ENS_CKPT="${ENS_CKPT:-/home/jakob/luka/runs/pass1_ensemble/bombek_so400m_dinov2_20260528-225201/best_ckpt/ckpt.pt}"
-THRESHOLD="${THRESHOLD:-0.5}"
+THRESHOLD="${THRESHOLD:-auto}"
 SIMPLE_MODE="${SIMPLE_MODE:-first_sentence}"
 QWEN_MODEL="${QWEN_MODEL:-Qwen/Qwen3.5-4B}"
 QWEN_BATCH_SIZE="${QWEN_BATCH_SIZE:-4}"
@@ -86,6 +88,14 @@ if [[ "${VERDICT_SOURCE}" == "ensemble" ]]; then
   ( cd "${EXP_DIR}" && python3 eval_ensemble.py \
       --ckpt "${ENS_CKPT}" --manifest "${PASS1_MANIFEST}" \
       --out "${PASS1_PRED}" --slice 0 --batch-size "${QWEN_BATCH_SIZE}" )
+  # Calibrate the decision threshold on the val sample (F1-optimal), unless the
+  # caller pinned a numeric THRESHOLD. eval_ensemble.py reports AUC (ranking,
+  # threshold-free) plus thr_best_f1 (argmax F1 over the PR curve).
+  if [[ "${THRESHOLD}" == "auto" ]]; then
+    THRESHOLD="$(python3 -c "import json; m=json.load(open('${PASS1_PRED}/metrics.json')); print(m['thr_best_f1'])")"
+    _AUC="$(python3 -c "import json; m=json.load(open('${PASS1_PRED}/metrics.json')); print(round(m.get('auc',0),4))")"
+    echo "  ensemble AUC=${_AUC}  calibrated threshold (F1-max on val)=${THRESHOLD}"
+  fi
   ENS_PRED_ARGS=(--verdict-source ensemble --ensemble-pred "${PASS1_PRED}/predictions.parquet" --threshold "${THRESHOLD}")
 else
   echo "=== $(date -u +%H:%M:%S) [1/5] Pass-1 verdict = ground truth ==="
