@@ -112,6 +112,18 @@ SAVE_STEPS="${SAVE_STEPS:-400}"
 EVAL_STEPS="${EVAL_STEPS:-400}"
 LOGGING_STEPS="${LOGGING_STEPS:-10}"
 
+# --- Component freezing / grounding (defaults: LoRA-LLM only, vision frozen) ---
+# Set FREEZE_VIT=false (+ FREEZE_ALIGNER=false) to fine-tune the vision tower so
+# the model can ground explanations on the actual evidence regions. When the ViT
+# is trained, also use a small VIT_LR/ALIGNER_LR (≈1e-5) and turn on
+# VIT_GRAD_CKPT to keep memory in check; see sbatch_train_vlm_v2_unfrozen_lj.sbatch.
+FREEZE_VIT="${FREEZE_VIT:-true}"
+FREEZE_ALIGNER="${FREEZE_ALIGNER:-true}"
+FREEZE_LLM="${FREEZE_LLM:-false}"
+VIT_GRAD_CKPT="${VIT_GRAD_CKPT:-false}"
+VIT_LR="${VIT_LR:-}"
+ALIGNER_LR="${ALIGNER_LR:-}"
+
 PACKING="${PACKING:-true}"
 PADDING_FREE="${PADDING_FREE:-true}"
 LAZY_TOKENIZE="${LAZY_TOKENIZE:-false}"
@@ -226,6 +238,8 @@ else
   echo "train_schedule:      num_train_epochs=${NUM_EPOCHS}  (~${APPROX_STEPS} steps/epoch)"
 fi
 echo "max_length:          ${MAX_LENGTH}  lr: ${LEARNING_RATE}  rank: ${LORA_RANK} alpha: ${LORA_ALPHA}"
+echo "freeze:              vit=${FREEZE_VIT} aligner=${FREEZE_ALIGNER} llm=${FREEZE_LLM}  vit_grad_ckpt=${VIT_GRAD_CKPT}"
+echo "vision_lr:           vit_lr=${VIT_LR:-<=lr>} aligner_lr=${ALIGNER_LR:-<=lr>}"
 echo "attn_impl:           ${ATTN_IMPL}"
 echo "deepspeed:           ${DEEPSPEED:-<off>}"
 echo "packing:             ${PACKING}  padding_free: ${PADDING_FREE}  lazy_tokenize: ${LAZY_TOKENIZE}"
@@ -257,6 +271,21 @@ if [[ -n "${PACKING_CACHE}" ]]; then
   PACKING_CACHE_FLAG=(--packing_cache "${PACKING_CACHE}")
 fi
 
+# Separate LR for the vision tower / aligner when unfrozen. Guard the flags in
+# case the installed ms-swift build does not expose them (older releases).
+VIT_LR_FLAG=()
+_SFT_HELP="$(swift sft --help 2>/dev/null || true)"
+if [[ -n "${VIT_LR}" ]]; then
+  if grep -q -- '--vit_lr' <<<"${_SFT_HELP}"; then
+    VIT_LR_FLAG+=(--vit_lr "${VIT_LR}")
+  else
+    echo "note: ms-swift has no --vit_lr; ViT will train at --learning_rate=${LEARNING_RATE}." >&2
+  fi
+fi
+if [[ -n "${ALIGNER_LR}" ]] && grep -q -- '--aligner_lr' <<<"${_SFT_HELP}"; then
+  VIT_LR_FLAG+=(--aligner_lr "${ALIGNER_LR}")
+fi
+
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" \
 NPROC_PER_NODE="${NPROC_PER_NODE}" \
 swift sft \
@@ -278,7 +307,7 @@ swift sft \
   --per_device_eval_batch_size 1 \
   --gradient_accumulation_steps "${GRAD_ACCUM}" \
   --gradient_checkpointing true \
-  --vit_gradient_checkpointing false \
+  --vit_gradient_checkpointing "${VIT_GRAD_CKPT}" \
   --learning_rate "${LEARNING_RATE}" \
   --lr_scheduler_type cosine \
   --warmup_ratio 0.05 \
@@ -287,9 +316,10 @@ swift sft \
   --lora_rank "${LORA_RANK}" \
   --lora_alpha "${LORA_ALPHA}" \
   --target_modules all-linear \
-  --freeze_vit true \
-  --freeze_aligner true \
-  --freeze_llm false \
+  --freeze_vit "${FREEZE_VIT}" \
+  --freeze_aligner "${FREEZE_ALIGNER}" \
+  --freeze_llm "${FREEZE_LLM}" \
+  "${VIT_LR_FLAG[@]}" \
   --eval_strategy steps \
   --eval_steps "${EVAL_STEPS}" \
   --save_strategy steps \
