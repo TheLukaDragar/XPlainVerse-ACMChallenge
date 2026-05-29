@@ -35,7 +35,7 @@ fi
 
 # shellcheck source=frida_resources.sh
 source "${CODE_ROOT}/scripts/frida_resources.sh"
-MASTER_ADDR="$(frida_resolve_master_addr)"
+MASTER_ADDR="$(frida_resolve_master_addr "${NNODES}")"
 frida_export_nccl_env
 
 if [[ -z "${MASTER_PORT:-}" ]]; then
@@ -143,6 +143,9 @@ if ! command -v swift >/dev/null 2>&1; then
   echo "error: 'swift' not on PATH inside the training container." >&2
   exit 1
 fi
+
+# Cache model before spawning multi-GPU torchrun (rank-0-only download + DDP barrier breaks NCCL).
+frida_warm_hf_model "${MODEL}"
 
 if [[ ! -f "${TRAIN_JSONL}" ]]; then
   echo "error: ${TRAIN_JSONL} missing. Build v2 JSONL first with scripts/sbatch_build_train_v2.sbatch." >&2

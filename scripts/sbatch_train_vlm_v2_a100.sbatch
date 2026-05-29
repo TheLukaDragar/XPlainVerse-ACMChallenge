@@ -27,8 +27,6 @@ CONTAINER=docker://ghcr.io/thelukadragar/xplainverse-acmchallenge:latest
 
 mkdir -p "${WORKSPACE_ROOT}/runs"
 
-MASTER_ADDR="$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -1)"
-
 if [[ -z "${WANDB_API_KEY:-}" && -f "${HOME}/.netrc" ]]; then
   WANDB_API_KEY="$(python3 - "${HOME}/.netrc" <<'PY'
 import netrc, sys
@@ -48,7 +46,7 @@ export WANDB_API_KEY
 echo "=== sbatch_train_vlm_v2_a100 ==="
 echo "job:        ${SLURM_JOB_ID}"
 echo "nodes:      ${SLURM_JOB_NODELIST}"
-echo "master:     ${MASTER_ADDR}"
+echo "master:     127.0.0.1 (single-node loopback)"
 echo "ntasks:     ${SLURM_NTASKS:-?}"
 echo "container:  ${CONTAINER}"
 echo "workspace:  ${WORKSPACE_ROOT}"
@@ -61,7 +59,7 @@ srun \
   --container-mount-home \
   --container-mounts "${WORKSPACE_ROOT}:${WORKSPACE_ROOT}" \
   --container-workdir "${CODE_ROOT}" \
-  --export=ALL,MASTER_ADDR="${MASTER_ADDR}",WANDB_API_KEY,SLURM_JOB_ID,SLURM_JOB_USER,SLURM_GPUS_ON_NODE \
+  --export=ALL,WANDB_API_KEY,SLURM_JOB_ID,SLURM_JOB_USER,SLURM_GPUS_ON_NODE \
   --label \
   bash -lc "
     set -euo pipefail

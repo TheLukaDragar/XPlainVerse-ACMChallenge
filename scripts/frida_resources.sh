@@ -69,11 +69,23 @@ frida_apply_cpu_defaults() {
 }
 
 # Resolve torchrun MASTER_ADDR on Frida (scontrol is often absent inside Pyxis).
+# Args: NNODES (optional, default 1).
 frida_resolve_master_addr() {
+  local nnodes="${1:-${NNODES:-1}}"
+
   if [[ -n "${MASTER_ADDR:-}" ]]; then
     echo "${MASTER_ADDR}"
     return
   fi
+
+  # Single-node multi-GPU: loopback is reliable inside Pyxis containers.
+  # Short hostnames like "aga" often fail NCCL bind with:
+  #   "Call to bind failed: Cannot assign requested address"
+  if [[ "${nnodes}" -eq 1 ]]; then
+    echo "127.0.0.1"
+    return
+  fi
+
   if [[ -n "${SLURM_STEP_NODELIST:-}" ]] && command -v scontrol >/dev/null 2>&1; then
     scontrol show hostnames "${SLURM_STEP_NODELIST}" | head -1
     return
@@ -82,7 +94,6 @@ frida_resolve_master_addr() {
     scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -1
     return
   fi
-  # Single-node fallback: use the compute hostname, not 127.0.0.1 (avoids DDP pickle errors).
   hostname -s 2>/dev/null || hostname
 }
 
@@ -122,4 +133,15 @@ PY
     fi
   done
   return 1
+}
+
+# Single-process HF cache warm before torchrun (avoids DDP barrier during snapshot_download).
+frida_warm_hf_model() {
+  local model_id="${1:-Qwen/Qwen3-VL-8B-Instruct}"
+  echo "prefetch: ensuring ${model_id} is in HF cache (${HF_HOME:-default})..." >&2
+  python3 - <<PY
+from huggingface_hub import snapshot_download
+snapshot_download("${model_id}")
+print("prefetch: ok")
+PY
 }
