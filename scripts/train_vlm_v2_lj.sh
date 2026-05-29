@@ -7,27 +7,26 @@
 # v2 dataset built by scripts/build_train_v2_lj.sh.
 #
 # === Quick start (from Slurm login node) ===
-#   Run inside the VLM training SIF via lj_gpu_exec.sh (torch 2.11 + flash_attn).
-#   Do NOT use scripts/lj_ghcr_image_exec.sh here — the GHCR -lj image is the
-#   Pass-1 (timm) image: it has a deepspeed build that calls nvcc (absent) and
-#   an older torch missing the FSDP2 symbols ms-swift imports.
+#   Runs inside the single lj training container (GHCR -lj image, built from
+#   docker/Dockerfile.lj) via scripts/lj_ghcr_image_exec.sh — the same container
+#   used for Pass-1, so the lj stack stays aligned. The devel-base image ships
+#   nvcc (deepspeed) and flash_attn (cu121/torch2.4); this script adds a small
+#   FSDP2 shim on PYTHONPATH so ms-swift `main` imports on torch 2.4.1.
 #
 #   # 1) Build v2 JSONL once (if dataset/*_v2.jsonl missing):
 #   LJ_GPU_GRES=gpu:1 LJ_GPU_TIME=02:00:00 \
-#     ./scripts/lj_gpu_exec.sh bash scripts/build_train_v2_lj.sh
+#     ./scripts/lj_ghcr_image_exec.sh bash scripts/build_train_v2_lj.sh
 #
 #   # 2) Full 4-GPU v2 SFT (background-safe: prefer sbatch_train_vlm_v2_lj.sbatch):
 #   LJ_GPU_GRES=gpu:4 LJ_GPU_TIME=48:00:00 \
-#     ./scripts/lj_gpu_exec.sh env REPORT_TO=wandb bash scripts/train_vlm_v2_lj.sh
+#     ./scripts/lj_ghcr_image_exec.sh env REPORT_TO=wandb bash scripts/train_vlm_v2_lj.sh
 #
 # Smoke (tiny steps, 1 GPU):
-#   LJ_GPU_GRES=gpu:1 LJ_GPU_TIME=01:00:00 ./scripts/lj_gpu_exec.sh \
+#   LJ_GPU_GRES=gpu:1 LJ_GPU_TIME=01:00:00 ./scripts/lj_ghcr_image_exec.sh \
 #     env REPORT_TO=tensorboard MAX_STEPS=4 NPROC_PER_NODE=1 TRAIN_SLICE=64 VAL_SLICE=8 \
 #     SAVE_STEPS=999999 EVAL_STEPS=999999 PREDICT_WITH_GENERATE=false \
 #     OUTPUT_DIR=/home/jakob/luka/runs/vlm_v2_smoke bash scripts/train_vlm_v2_lj.sh
 #
-# The SIF has no deepspeed, so this falls back to plain DDP automatically
-# (4×A100 80GB fits Qwen3-VL-8B LoRA with gradient checkpointing).
 # Hyperparams match scripts/train_vlm_v2_frida.sh. Defaults: 4 GPUs, eff batch 32.
 set -euo pipefail
 
