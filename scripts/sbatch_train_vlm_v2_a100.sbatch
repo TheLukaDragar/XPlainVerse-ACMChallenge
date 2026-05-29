@@ -27,12 +27,32 @@ CONTAINER=docker://ghcr.io/thelukadragar/xplainverse-acmchallenge:latest
 
 mkdir -p "${WORKSPACE_ROOT}/runs"
 
+MASTER_ADDR="$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -1)"
+
+if [[ -z "${WANDB_API_KEY:-}" && -f "${HOME}/.netrc" ]]; then
+  WANDB_API_KEY="$(python3 - "${HOME}/.netrc" <<'PY'
+import netrc, sys
+try:
+    print(netrc.netrc(sys.argv[1]).authenticators("api.wandb.ai")[2])
+except (FileNotFoundError, TypeError):
+    pass
+PY
+)"
+fi
+if [[ -z "${WANDB_API_KEY:-}" ]]; then
+  echo "error: WANDB_API_KEY not set and no api.wandb.ai entry in ${HOME}/.netrc" >&2
+  exit 1
+fi
+export WANDB_API_KEY
+
 echo "=== sbatch_train_vlm_v2_a100 ==="
 echo "job:        ${SLURM_JOB_ID}"
 echo "nodes:      ${SLURM_JOB_NODELIST}"
+echo "master:     ${MASTER_ADDR}"
 echo "ntasks:     ${SLURM_NTASKS:-?}"
 echo "container:  ${CONTAINER}"
 echo "workspace:  ${WORKSPACE_ROOT}"
+echo "wandb:      key loaded (${#WANDB_API_KEY} chars)"
 echo "started:    $(date -Is)"
 echo
 
@@ -41,13 +61,16 @@ srun \
   --container-mount-home \
   --container-mounts "${WORKSPACE_ROOT}:${WORKSPACE_ROOT}" \
   --container-workdir "${CODE_ROOT}" \
+  --export=ALL,MASTER_ADDR="${MASTER_ADDR}",WANDB_API_KEY,SLURM_JOB_ID,SLURM_JOB_USER,SLURM_GPUS_ON_NODE \
   --label \
   bash -lc "
     set -euo pipefail
     export WORKSPACE_ROOT=${WORKSPACE_ROOT}
     export CODE_ROOT=${CODE_ROOT}
+    export FRIDA_USER_HOME=${HOME}
     export OUTPUT_DIR=${WORKSPACE_ROOT}/runs/vlm_v2_a100
     export WANDB_RUN_NAME=vlm_v2_a100_1ep
+    export ADD_VERSION=false
     chmod +x ${CODE_ROOT}/scripts/train_vlm_v2_frida.sh
     exec ${CODE_ROOT}/scripts/train_vlm_v2_frida.sh
   "
