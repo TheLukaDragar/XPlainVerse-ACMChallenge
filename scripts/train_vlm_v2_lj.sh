@@ -48,6 +48,14 @@ LJ_RUNS_ROOT="${LJ_RUNS_ROOT:-/home/jakob/luka/runs}"
 # --- Container Python (HOME bind-mount must not shadow torch/ms-swift) ---
 export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
 
+# ms-swift in the lj images imports FSDP2 (torch>=2.6) at trainer-factory import
+# time, but the images ship torch 2.4.1. This sitecustomize shim adds a harmless
+# FSDPModule placeholder so `swift sft` imports. Drop once images ship torch>=2.6.
+_SWIFT_COMPAT_DIR="${CODE_ROOT}/scripts/lj_swift_compat"
+if [[ -f "${_SWIFT_COMPAT_DIR}/sitecustomize.py" ]]; then
+  export PYTHONPATH="${_SWIFT_COMPAT_DIR}:${PYTHONPATH:-}"
+fi
+
 # --- CUDA / PyTorch env (lj SIF: torch +cu121; prefer cu121/cu12 before cu13) ---
 for _cuda_lib in cu121 cu12 cu13; do
   _nv_lib="/usr/local/lib/python3.10/dist-packages/nvidia/${_cuda_lib}/lib"
