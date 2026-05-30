@@ -29,14 +29,36 @@ echo
 
 echo "[$(date -Is)] downloading test/test_images.tar.part-* from HuggingFace..." >&2
 python3 - <<PY
-from huggingface_hub import snapshot_download
+from huggingface_hub import HfApi, hf_hub_download
+import os
 
-snapshot_download(
-    repo_id="${REPO_ID}",
-    repo_type="dataset",
-    allow_patterns=["test/test_images.tar.part-*"],
-    local_dir="${BASE}",
+repo_id = "${REPO_ID}"
+local_dir = "${BASE}"
+api = HfApi()
+
+files = sorted(
+    f for f in api.list_repo_files(repo_id, repo_type="dataset")
+    if f.startswith("test/test_images.tar.part-")
 )
+if not files:
+    raise SystemExit("error: no test/test_images.tar.part-* in repo")
+
+print(f"found {len(files)} part file(s) in repo", flush=True)
+for i, relpath in enumerate(files, 1):
+    dest = os.path.join(local_dir, relpath)
+    if os.path.isfile(dest) and os.path.getsize(dest) > 0:
+        print(f"[{i}/{len(files)}] skip existing {relpath} ({os.path.getsize(dest)} bytes)", flush=True)
+        continue
+    print(f"[{i}/{len(files)}] downloading {relpath} ...", flush=True)
+    hf_hub_download(
+        repo_id=repo_id,
+        repo_type="dataset",
+        filename=relpath,
+        local_dir=local_dir,
+        local_dir_use_symlinks=False,
+    )
+    print(f"[{i}/{len(files)}] ok {relpath}", flush=True)
+
 print("download: ok")
 PY
 

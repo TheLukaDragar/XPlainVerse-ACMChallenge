@@ -80,6 +80,7 @@ LORA_RANK="${LORA_RANK:-16}"
 LORA_ALPHA="${LORA_ALPHA:-32}"
 MAX_LENGTH="${MAX_LENGTH:-4096}"
 OUTPUT_DIR="${OUTPUT_DIR:-${WORKSPACE_ROOT}/runs/vlm_v2_h100}"
+RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 SEED="${SEED:-42}"
 
 # 8 × H100 default: global/effective batch = 4 * 8 * 1 = 32.
@@ -201,6 +202,11 @@ if [[ "${USE_PRED_CALLBACK}" == "true" ]]; then
   CALLBACK_FLAG=(--callbacks wandb_predictions)
 fi
 
+RESUME_FLAG=()
+if [[ -n "${RESUME_FROM_CHECKPOINT}" ]]; then
+  RESUME_FLAG=(--resume_from_checkpoint "${RESUME_FROM_CHECKPOINT}")
+fi
+
 PACKING_CACHE_FLAG=()
 if [[ -n "${PACKING_CACHE}" ]]; then
   PACKING_CACHE_FLAG=(--packing_cache "${PACKING_CACHE}")
@@ -227,6 +233,9 @@ echo "packing:             ${PACKING} padding_free=${PADDING_FREE} lazy_tokenize
 echo "workers:             cpus=${FRIDA_CPUS_TOTAL:-?} dataset_num_proc=${DATASET_NUM_PROC} dataloader_workers/rank=${DATALOADER_NUM_WORKERS}"
 echo "output:              ${OUTPUT_DIR}"
 echo "add_version:         ${ADD_VERSION}"
+if [[ -n "${RESUME_FROM_CHECKPOINT}" ]]; then
+  echo "resume:              ${RESUME_FROM_CHECKPOINT}"
+fi
 echo "report_to:           ${REPORT_TO}"
 if [[ "${REPORT_TO}" == *wandb* ]]; then
   echo "wandb:               ${WANDB_ENTITY}/${WANDB_PROJECT} (${WANDB_RUN_NAME})"
@@ -281,4 +290,5 @@ swift sft \
   --add_version "${ADD_VERSION}" \
   "${DEEPSPEED_FLAG[@]}" \
   "${PLUGIN_FLAG[@]}" \
-  "${CALLBACK_FLAG[@]}"
+  "${CALLBACK_FLAG[@]}" \
+  "${RESUME_FLAG[@]}"

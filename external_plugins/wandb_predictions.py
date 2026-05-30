@@ -117,6 +117,16 @@ class WandbPredictionsCallback(TrainerCallback):
             return
         if wandb.run is None:
             return
+        try:
+            self._log_predictions(args, state, wandb)
+        except Exception as exc:
+            logger.warning(
+                f'wandb_predictions: non-fatal callback error at step '
+                f'{state.global_step}; training continues. {exc}',
+                exc_info=True,
+            )
+
+    def _log_predictions(self, args, state, wandb):
         if not self.predict_path.is_file():
             logger.warning(
                 f'wandb_predictions: predict.jsonl not found at {self.predict_path}. '
@@ -139,18 +149,40 @@ class WandbPredictionsCallback(TrainerCallback):
             self._byte_offset = 0
 
         new_rows: list[dict[str, Any]] = []
-        with self.predict_path.open('r', encoding='utf-8') as f:
-            f.seek(self._byte_offset)
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    new_rows.append(json.loads(line))
-                except json.JSONDecodeError as exc:
-                    logger.warning(f'wandb_predictions: bad json line: {exc}')
-                    continue
-            self._byte_offset = f.tell()
+        try:
+            with self.predict_path.open('rb') as f:
+                f.seek(self._byte_offset)
+                # Byte offsets can land mid-line if predict.jsonl is still being
+                # written during eval; skip the partial line before decoding.
+                if self._byte_offset > 0:
+                    f.readline()
+
+                for raw in f:
+                    try:
+                        line = raw.decode('utf-8', errors='replace').strip()
+                    except UnicodeDecodeError as exc:
+                        logger.warning(
+                            f'wandb_predictions: skipping undecodable line: {exc}'
+                        )
+                        continue
+                    if not line:
+                        continue
+                    try:
+                        new_rows.append(json.loads(line))
+                    except json.JSONDecodeError as exc:
+                        logger.warning(f'wandb_predictions: bad json line: {exc}')
+                        continue
+                self._byte_offset = f.tell()
+        except OSError as exc:
+            logger.warning(f'wandb_predictions: cannot read {self.predict_path}: {exc}')
+            return
+        except UnicodeDecodeError as exc:
+            logger.warning(
+                f'wandb_predictions: predict.jsonl decode failed at offset '
+                f'{self._byte_offset}; resetting offset. {exc}'
+            )
+            self._byte_offset = 0
+            return
 
         if not new_rows:
             return
@@ -207,6 +239,7 @@ class WandbPredictionsCallback(TrainerCallback):
             f'verdict_match={match_count}/{len(rows)})'
         )
         self._eval_idx += 1
+
 
 
 callbacks_map['wandb_predictions'] = WandbPredictionsCallback
