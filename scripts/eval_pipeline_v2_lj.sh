@@ -54,7 +54,7 @@ ENS_CKPT="${ENS_CKPT:-/home/jakob/luka/runs/pass1_ensemble/bombek_so400m_dinov2_
 THRESHOLD="${THRESHOLD:-auto}"
 SIMPLE_MODE="${SIMPLE_MODE:-first_sentence}"
 QWEN_MODEL="${QWEN_MODEL:-Qwen/Qwen3.5-4B}"
-QWEN_BATCH_SIZE="${QWEN_BATCH_SIZE:-4}"
+QWEN_BATCH_SIZE="${QWEN_BATCH_SIZE:-16}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-512}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
@@ -85,9 +85,13 @@ if [[ "${VERDICT_SOURCE}" == "ensemble" ]]; then
   echo "=== $(date -u +%H:%M:%S) [1/5] Pass-1 ensemble on ${N} samples ==="
   python3 "${EVAL_DIR_SRC}/build_pass2_infer.py" manifest \
     --val-infer "${VAL_INFER}" --gt "${GT}" --n "${N}" --out "${PASS1_MANIFEST}"
-  ( cd "${EXP_DIR}" && python3 eval_ensemble.py \
-      --ckpt "${ENS_CKPT}" --manifest "${PASS1_MANIFEST}" \
-      --out "${PASS1_PRED}" --slice 0 --batch-size "${QWEN_BATCH_SIZE}" )
+  if [[ -f "${PASS1_PRED}/predictions.parquet" ]]; then
+    echo "  [resume] reusing existing ensemble predictions: ${PASS1_PRED}/predictions.parquet"
+  else
+    ( cd "${EXP_DIR}" && python3 eval_ensemble.py \
+        --ckpt "${ENS_CKPT}" --manifest "${PASS1_MANIFEST}" \
+        --out "${PASS1_PRED}" --slice 0 --batch-size "${QWEN_BATCH_SIZE}" )
+  fi
   # Calibrate the decision threshold on the val sample (F1-optimal), unless the
   # caller pinned a numeric THRESHOLD. eval_ensemble.py reports AUC (ranking,
   # threshold-free) plus thr_best_f1 (argmax F1 over the PR curve).
@@ -104,26 +108,40 @@ fi
 
 # --- Stage 2a: build conditioned infer set -----------------------------------
 echo "=== $(date -u +%H:%M:%S) [2/5] build conditioned Pass-2 infer set ==="
-python3 "${EVAL_DIR_SRC}/build_pass2_infer.py" infer \
-  --val-infer "${VAL_INFER}" --gt "${GT}" --n "${N}" \
-  --prompt-file "${PROMPT_FILE}" "${ENS_PRED_ARGS[@]}" \
-  --out "${CONDITIONED}" --verdicts-json "${OUT_DIR}/pass1_verdicts.json"
+if [[ -s "${CONDITIONED}" ]]; then
+  echo "  [resume] reusing existing conditioned infer set: ${CONDITIONED}"
+else
+  python3 "${EVAL_DIR_SRC}/build_pass2_infer.py" infer \
+    --val-infer "${VAL_INFER}" --gt "${GT}" --n "${N}" \
+    --prompt-file "${PROMPT_FILE}" "${ENS_PRED_ARGS[@]}" \
+    --out "${CONDITIONED}" --verdicts-json "${OUT_DIR}/pass1_verdicts.json"
+fi
 
 # --- Stage 2b: VLM infer (conditioned) ---------------------------------------
 echo "=== $(date -u +%H:%M:%S) [3/5] Qwen3-VL infer (${ADAPTERS##*/}) ==="
-python3 /opt/ms-swift/swift/cli/infer.py \
-  --model Qwen/Qwen3-VL-8B-Instruct --model_type qwen3_vl --use_hf true \
-  --adapters "${ADAPTERS}" \
-  --val_dataset "${CONDITIONED}" \
-  --infer_backend transformers \
-  --max_new_tokens "${MAX_NEW_TOKENS}" \
-  --result_path "${INFER_JSONL}"
+_N_COND="$(wc -l < "${CONDITIONED}" 2>/dev/null || echo 0)"
+_N_INFER="$( [[ -f "${INFER_JSONL}" ]] && wc -l < "${INFER_JSONL}" || echo 0 )"
+if [[ "${_N_INFER}" -ge "${_N_COND}" && "${_N_INFER}" -gt 0 ]]; then
+  echo "  [resume] reusing existing infer output (${_N_INFER} rows): ${INFER_JSONL}"
+else
+  python3 /opt/ms-swift/swift/cli/infer.py \
+    --model Qwen/Qwen3-VL-8B-Instruct --model_type qwen3_vl --use_hf true \
+    --adapters "${ADAPTERS}" \
+    --val_dataset "${CONDITIONED}" \
+    --infer_backend transformers \
+    --max_new_tokens "${MAX_NEW_TOKENS}" \
+    --result_path "${INFER_JSONL}"
+fi
 
 # --- Stage 3: build submission -----------------------------------------------
 echo "=== $(date -u +%H:%M:%S) [4/5] build submission (simple_mode=${SIMPLE_MODE}) ==="
-( cd "${EVAL_DIR_SRC}" && python3 build_submission.py \
-    --infer "${INFER_JSONL}" --output "${SUBMISSION}" \
-    --simple-mode "${SIMPLE_MODE}" --errors-json "${OUT_DIR}/submission_errors.json" ) || true
+if [[ -s "${SUBMISSION}" ]]; then
+  echo "  [resume] reusing existing submission: ${SUBMISSION}"
+else
+  ( cd "${EVAL_DIR_SRC}" && python3 build_submission.py \
+      --infer "${INFER_JSONL}" --output "${SUBMISSION}" \
+      --simple-mode "${SIMPLE_MODE}" --errors-json "${OUT_DIR}/submission_errors.json" ) || true
+fi
 
 # --- Stage 4: official scorer ------------------------------------------------
 echo "=== $(date -u +%H:%M:%S) [5/5] official eval (${QWEN_MODEL}) ==="
