@@ -671,6 +671,9 @@ def main() -> None:
     parser.add_argument("--submission-simple-keys", nargs="+", default=["simple_explanation"])
     parser.add_argument("--reference-simple-keys", nargs="+", default=["simple_explanation"])
 
+    parser.add_argument("--skip-sle", action="store_true", default=False,
+                        help="Skip the SLE simplicity stage (e.g. torch<2.6 can't load sle-base). "
+                             "simple_sle_* will be null and simple_overall uses BERT only.")
     parser.add_argument("--no-resume", dest="resume", action="store_false", default=True,
                         help="Ignore any existing _stage_cache.jsonl and recompute all stages.")
     parser.add_argument("--cache-every", type=int, default=5,
@@ -811,17 +814,27 @@ def main() -> None:
 
         clear_chat_model_cache()
 
+    sle_available = not args.skip_sle
     if args.preload_models:
-        print("Preloading BERTScore and SLE models...")
+        print("Preloading BERTScore model...")
         preload_bertscorer(
             model_type=args.bertscore_model_type,
             lang=args.bertscore_lang,
             rescale_with_baseline=args.bertscore_rescale_with_baseline,
         )
-        preload_sle_model(
-            model_id=args.sle_model_id,
-            local_files_only=args.sle_local_files_only,
-        )
+        if sle_available:
+            try:
+                preload_sle_model(
+                    model_id=args.sle_model_id,
+                    local_files_only=args.sle_local_files_only,
+                )
+            except Exception as exc:
+                # e.g. liamcripwell/sle-base ships a legacy .bin that transformers
+                # refuses on torch < 2.6. Degrade gracefully: skip SLE, still emit
+                # complex (entity/facts/BERT) + simple_bert + detection scores.
+                print(f"Warning: SLE model unavailable, skipping SLE ({exc}). "
+                      f"simple_sle_* will be null.")
+                sle_available = False
 
     _run_bertscore_stage(
         rows,
@@ -847,11 +860,17 @@ def main() -> None:
         show_progress=args.show_progress,
         desc="Simple BERTScore",
     )
-    _run_simple_sle_stage(
-        rows,
-        args=args,
-        show_progress=args.show_progress,
-    )
+    # BERT done — cache now so a later SLE failure never costs the Qwen+BERT work.
+    _save_stage_cache(rows, stage_cache_path)
+    if sle_available:
+        try:
+            _run_simple_sle_stage(
+                rows,
+                args=args,
+                show_progress=args.show_progress,
+            )
+        except Exception as exc:
+            print(f"Warning: SLE scoring failed, leaving simple_sle_* null ({exc}).")
     # Persist BERT/SLE results too, so a kill before the final write still resumes.
     _save_stage_cache(rows, stage_cache_path)
 
