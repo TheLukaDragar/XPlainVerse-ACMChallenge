@@ -31,7 +31,10 @@ export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
 # against the container libs. Force the container toolchain (mirrors xplainverse_exec.sh).
 export PATH="/usr/local/bin:/usr/bin:/bin"
 unset CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_SHLVL CONDA_PYTHON_EXE CONDA_EXE LD_PRELOAD 2>/dev/null || true
-export CC="${CC:-/usr/bin/cc}" CXX="${CXX:-/usr/bin/c++}" TRITON_DISABLE_LINE_INFO=1
+# Force the container toolchain UNCONDITIONALLY — the login env exports CC/CXX
+# pointing at the conda compiler (x86_64-conda-linux-gnu-cc), which triton (used
+# by vLLM/torch.compile) would otherwise pick up and fail to compile with.
+export CC=/usr/bin/cc CXX=/usr/bin/c++ GCC=/usr/bin/gcc TRITON_DISABLE_LINE_INFO=1
 
 # ms-swift main imports FSDP2 on torch 2.4.1 — keep the shim on PYTHONPATH.
 _SHIM="${CODE_ROOT}/scripts/lj_swift_compat"
