@@ -67,7 +67,11 @@ NUM_EPOCHS="${NUM_EPOCHS:-1}"
 MAX_STEPS="${MAX_STEPS:-}"
 SAVE_STEPS="${SAVE_STEPS:-100}"
 LOG_STEPS="${LOG_STEPS:-1}"
-USE_VLLM="${USE_VLLM:-false}"
+# The cu130 lj image ships vLLM — use it for fast rollouts. Colocate shares the
+# training GPUs (no separate server); tune memory split via VLLM_GPU_MEM_UTIL.
+USE_VLLM="${USE_VLLM:-true}"
+VLLM_MODE="${VLLM_MODE:-colocate}"
+VLLM_GPU_MEM_UTIL="${VLLM_GPU_MEM_UTIL:-0.4}"
 DEEPSPEED="${DEEPSPEED:-zero2}"
 ATTN_IMPL="${ATTN_IMPL:-flash_attn}"
 
@@ -104,6 +108,10 @@ TRAIN_SCHEDULE=(--num_train_epochs "${NUM_EPOCHS}")
 [[ -n "${MAX_STEPS}" ]] && TRAIN_SCHEDULE=(--max_steps "${MAX_STEPS}")
 ADAPTER_FLAG=(); [[ -n "${ADAPTERS}" ]] && ADAPTER_FLAG=(--adapters "${ADAPTERS}")
 DEEPSPEED_FLAG=(); [[ "${NPROC_PER_NODE}" -gt 1 && -n "${DEEPSPEED}" ]] && DEEPSPEED_FLAG=(--deepspeed "${DEEPSPEED}")
+VLLM_FLAGS=()
+if [[ "${USE_VLLM}" == "true" ]]; then
+  VLLM_FLAGS=(--vllm_mode "${VLLM_MODE}" --vllm_gpu_memory_utilization "${VLLM_GPU_MEM_UTIL}")
+fi
 
 echo "=== VLM v2 GRPO (lj) ==="
 echo "  model/adapters : ${MODEL}  <- ${ADAPTERS:-<none>}"
@@ -139,6 +147,7 @@ swift rlhf \
   --max_completion_length "${MAX_COMPLETION_LENGTH}" \
   --max_length "${MAX_LENGTH}" \
   --use_vllm "${USE_VLLM}" \
+  "${VLLM_FLAGS[@]}" \
   --beta "${BETA}" \
   "${TRAIN_SCHEDULE[@]}" \
   --per_device_train_batch_size "${PER_DEVICE_BS}" \
