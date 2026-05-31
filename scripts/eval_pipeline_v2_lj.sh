@@ -54,6 +54,9 @@ ENS_CKPT="${ENS_CKPT:-/home/jakob/luka/runs/pass1_ensemble/bombek_so400m_dinov2_
 THRESHOLD="${THRESHOLD:-auto}"
 SIMPLE_MODE="${SIMPLE_MODE:-first_sentence}"
 QWEN_MODEL="${QWEN_MODEL:-Qwen/Qwen3.5-4B}"
+# SLE: default to the local safetensors conversion (torch<2.6 can't load the
+# upstream .bin). Set SLE_MODEL_ID="" to fall back to the HF id (will skip on 2.4).
+SLE_MODEL_ID="${SLE_MODEL_ID:-/home/jakob/luka/models/sle-base-st}"
 QWEN_BATCH_SIZE="${QWEN_BATCH_SIZE:-16}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-512}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
@@ -145,11 +148,16 @@ fi
 
 # --- Stage 4: official scorer ------------------------------------------------
 echo "=== $(date -u +%H:%M:%S) [5/5] official eval (${QWEN_MODEL}) ==="
+_SLE_ARGS=()
+if [[ -n "${SLE_MODEL_ID}" ]]; then
+  _SLE_ARGS=(--sle-model-id "${SLE_MODEL_ID}")
+  [[ -d "${SLE_MODEL_ID}" ]] && _SLE_ARGS+=(--sle-local-files-only)
+fi
 ( cd "${EVAL_DIR_SRC}" && python3 evaluate_val.py \
     --submission "${SUBMISSION}" --ground-truth "${GT}" \
     --output-dir "${EVAL_OUT}" --backend transformers \
     --model-name "${QWEN_MODEL}" --qwen-batch-size "${QWEN_BATCH_SIZE}" \
-    --device-map "cuda:0" )
+    --device-map "cuda:0" "${_SLE_ARGS[@]}" )
 
 echo
 echo "=== DONE $(date -u +%H:%M:%S) ==="
