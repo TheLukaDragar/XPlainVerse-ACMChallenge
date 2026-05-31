@@ -25,6 +25,14 @@ elif [[ -d /workspace/XPlainVerse-ACMChallenge ]]; then CODE_ROOT="/workspace/XP
 else CODE_ROOT="/home/jakob/luka/code/XPlainVerse-ACMChallenge"; fi
 
 export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
+
+# Scrub host conda from the env: vLLM/triton JIT-compile CUDA kernels at runtime
+# and otherwise pick up ~/miniconda3/bin/*-cc (HOME is bind-mounted), which fails
+# against the container libs. Force the container toolchain (mirrors xplainverse_exec.sh).
+export PATH="/usr/local/bin:/usr/bin:/bin"
+unset CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_SHLVL CONDA_PYTHON_EXE CONDA_EXE LD_PRELOAD 2>/dev/null || true
+export CC="${CC:-/usr/bin/cc}" CXX="${CXX:-/usr/bin/c++}" TRITON_DISABLE_LINE_INFO=1
+
 # ms-swift main imports FSDP2 on torch 2.4.1 — keep the shim on PYTHONPATH.
 _SHIM="${CODE_ROOT}/scripts/lj_swift_compat"
 [[ -f "${_SHIM}/sitecustomize.py" ]] && export PYTHONPATH="${_SHIM}:${PYTHONPATH:-}"
