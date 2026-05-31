@@ -83,6 +83,10 @@ LOG_STEPS="${LOG_STEPS:-1}"
 USE_VLLM="${USE_VLLM:-true}"
 VLLM_MODE="${VLLM_MODE:-colocate}"
 VLLM_GPU_MEM_UTIL="${VLLM_GPU_MEM_UTIL:-0.4}"
+# Cap vLLM context — Qwen3-VL's native max_model_len is 262k, which demands a
+# huge KV cache. Our prompt (≤1024 image tokens + text) + completion fits in a
+# few k, so cap it to keep colocate KV cache small.
+VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-${MAX_LENGTH:-4096}}"
 DEEPSPEED="${DEEPSPEED:-zero2}"
 ATTN_IMPL="${ATTN_IMPL:-flash_attn}"
 
@@ -121,7 +125,9 @@ ADAPTER_FLAG=(); [[ -n "${ADAPTERS}" ]] && ADAPTER_FLAG=(--adapters "${ADAPTERS}
 DEEPSPEED_FLAG=(); [[ "${NPROC_PER_NODE}" -gt 1 && -n "${DEEPSPEED}" ]] && DEEPSPEED_FLAG=(--deepspeed "${DEEPSPEED}")
 VLLM_FLAGS=()
 if [[ "${USE_VLLM}" == "true" ]]; then
-  VLLM_FLAGS=(--vllm_mode "${VLLM_MODE}" --vllm_gpu_memory_utilization "${VLLM_GPU_MEM_UTIL}")
+  VLLM_FLAGS=(--vllm_mode "${VLLM_MODE}"
+              --vllm_gpu_memory_utilization "${VLLM_GPU_MEM_UTIL}"
+              --vllm_max_model_len "${VLLM_MAX_MODEL_LEN}")
 fi
 
 echo "=== VLM v2 GRPO (lj) ==="
