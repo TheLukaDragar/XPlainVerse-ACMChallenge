@@ -85,6 +85,15 @@ class _BertScorer:
                 rescale_with_baseline=False,
                 device="cuda" if torch.cuda.is_available() else "cpu",
             )
+            # bert_score passes tokenizer.model_max_length to enable_truncation;
+            # DeBERTa's sentinel (~1e30) overflows the newer Rust tokenizer. Clamp
+            # to the model's real max positions (512).
+            try:
+                tok = getattr(cls._scorer, "_tokenizer", None)
+                if tok is not None and int(getattr(tok, "model_max_length", 0)) > 100000:
+                    tok.model_max_length = 512
+            except Exception:
+                pass
         return cls._scorer
 
 
