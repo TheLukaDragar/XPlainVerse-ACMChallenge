@@ -54,6 +54,71 @@ def _write_jsonl(path, rows):
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+# Expensive, resumable per-sample fields. Cached to disk after each stage (and
+# periodically within a stage) so a kill/time-limit resumes instead of redoing
+# the multi-hour Qwen passes. See _save_stage_cache / _load_stage_cache.
+_CACHE_KEYS = (
+    "_gt_extraction",
+    "_pred_extraction",
+    "_gt_to_pred_entity",
+    "_gt_to_pred_fact",
+    "_pred_to_gt_entity",
+    "_pred_to_gt_fact",
+    "complex_bert_f1",
+    "simple_bert_f1",
+    "simple_sle_raw",
+    "simple_sle_norm",
+    "simple_sle_score",
+)
+
+
+def _save_stage_cache(rows, path):
+    if not path:
+        return
+    path = Path(path)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tmp.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            sid = row.get("sample_id")
+            if sid is None:
+                continue
+            cached = {k: row[k] for k in _CACHE_KEYS if k in row and row[k] is not None}
+            if cached:
+                cached["sample_id"] = sid
+                handle.write(json.dumps(cached, ensure_ascii=False) + "\n")
+    tmp.replace(path)  # atomic: a kill mid-write never corrupts the cache
+
+
+def _load_stage_cache(rows, path):
+    path = Path(path)
+    if not path.is_file():
+        return 0
+    by_sid = {}
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            sid = rec.get("sample_id")
+            if sid is not None:
+                by_sid[sid] = rec
+    restored = 0
+    for row in rows:
+        rec = by_sid.get(row.get("sample_id"))
+        if not rec:
+            continue
+        for key in _CACHE_KEYS:
+            if key in rec and row.get(key) is None:
+                row[key] = rec[key]
+        restored += 1
+    return restored
+
+
 def _compute_mean(values):
     numeric_values = [float(value) for value in values if value is not None]
     if not numeric_values:
@@ -329,8 +394,15 @@ def _run_extraction_stage(
     args,
     desc,
     show_progress,
+    cache_path=None,
+    cache_every=5,
 ):
-    active_indices = [index for index, row in enumerate(rows) if row.get(text_key)]
+    # Resume: skip samples already extracted (loaded from the stage cache).
+    active_indices = [
+        index
+        for index, row in enumerate(rows)
+        if row.get(text_key) and row.get(output_key) is None
+    ]
     if not active_indices:
         return
 
@@ -341,7 +413,7 @@ def _run_extraction_stage(
         desc=desc,
         disable=not show_progress,
     )
-    for start in batch_iterator:
+    for _batch_no, start in enumerate(batch_iterator, start=1):
         batch_indices = active_indices[start : start + args.qwen_batch_size]
         user_prompts = [
             prompt_template.replace("{{EXPLANATION_TEXT}}", rows[index][text_key])
@@ -393,6 +465,11 @@ def _run_extraction_stage(
                     ),
                 )
 
+        if cache_path and cache_every and (_batch_no % cache_every == 0):
+            _save_stage_cache(rows, cache_path)
+
+    _save_stage_cache(rows, cache_path)
+
 
 def _run_coverage_stage(
     rows,
@@ -405,11 +482,16 @@ def _run_coverage_stage(
     args,
     desc,
     show_progress,
+    cache_path=None,
+    cache_every=5,
 ):
+    # Resume: skip samples already covered (loaded from the stage cache).
     active_indices = [
         index
         for index, row in enumerate(rows)
-        if row.get(reference_payload_key) is not None and row.get(candidate_text_key)
+        if row.get(reference_payload_key) is not None
+        and row.get(candidate_text_key)
+        and row.get(entity_output_key) is None
     ]
     if not active_indices:
         return
@@ -421,7 +503,7 @@ def _run_coverage_stage(
         desc=desc,
         disable=not show_progress,
     )
-    for start in batch_iterator:
+    for _batch_no, start in enumerate(batch_iterator, start=1):
         batch_indices = active_indices[start : start + args.qwen_batch_size]
         user_prompts = []
         for index in batch_indices:
@@ -482,6 +564,11 @@ def _run_coverage_stage(
                         exc,
                     ),
                 )
+
+        if cache_path and cache_every and (_batch_no % cache_every == 0):
+            _save_stage_cache(rows, cache_path)
+
+    _save_stage_cache(rows, cache_path)
 
 
 def _run_bertscore_stage(
@@ -584,6 +671,14 @@ def main() -> None:
     parser.add_argument("--submission-simple-keys", nargs="+", default=["simple_explanation"])
     parser.add_argument("--reference-simple-keys", nargs="+", default=["simple_explanation"])
 
+    parser.add_argument("--skip-sle", action="store_true", default=False,
+                        help="Skip the SLE simplicity stage (e.g. torch<2.6 can't load sle-base). "
+                             "simple_sle_* will be null and simple_overall uses BERT only.")
+    parser.add_argument("--no-resume", dest="resume", action="store_false", default=True,
+                        help="Ignore any existing _stage_cache.jsonl and recompute all stages.")
+    parser.add_argument("--cache-every", type=int, default=5,
+                        help="Checkpoint the stage cache every N batches (0 disables in-stage saves).")
+
     parser.add_argument("--entity-fact-prompt", type=Path, default=Path(__file__).resolve().parent / "prompts" / "entity_fact_extraction_prompt.txt")
     parser.add_argument("--semantic-coverage-prompt", type=Path, default=Path(__file__).resolve().parent / "prompts" / "semantic_coverage_prompt.txt")
 
@@ -638,6 +733,18 @@ def main() -> None:
         print("Alignment diagnostics: {0}".format(len(diagnostics)))
 
     rows = _prepare_rows(aligned_rows, args, args.show_progress)
+
+    # Resumable stage cache: restore any per-sample Qwen/BERT/SLE results from a
+    # previous (possibly killed) run so we never redo the multi-hour passes.
+    stage_cache_path = output_dir / "_stage_cache.jsonl"
+    cache_every = None if getattr(args, "cache_every", 5) in (None, 0) else args.cache_every
+    if getattr(args, "resume", True):
+        restored = _load_stage_cache(rows, stage_cache_path)
+        if restored:
+            print(f"Resumed stage cache: {restored} samples from {stage_cache_path}")
+    else:
+        stage_cache_path = None
+
     if args.skip_qwen:
         print("Skipping Qwen extraction and coverage. Qwen-based complex metrics will be written as null.")
     else:
@@ -664,6 +771,8 @@ def main() -> None:
             args=args,
             desc="Qwen extract ground truth",
             show_progress=args.show_progress,
+            cache_path=stage_cache_path,
+            cache_every=cache_every,
         )
         _run_extraction_stage(
             rows,
@@ -673,6 +782,8 @@ def main() -> None:
             args=args,
             desc="Qwen extract prediction",
             show_progress=args.show_progress,
+            cache_path=stage_cache_path,
+            cache_every=cache_every,
         )
         _run_coverage_stage(
             rows,
@@ -684,6 +795,8 @@ def main() -> None:
             args=args,
             desc="Qwen coverage gt->pred",
             show_progress=args.show_progress,
+            cache_path=stage_cache_path,
+            cache_every=cache_every,
         )
         _run_coverage_stage(
             rows,
@@ -695,21 +808,33 @@ def main() -> None:
             args=args,
             desc="Qwen coverage pred->gt",
             show_progress=args.show_progress,
+            cache_path=stage_cache_path,
+            cache_every=cache_every,
         )
 
         clear_chat_model_cache()
 
+    sle_available = not args.skip_sle
     if args.preload_models:
-        print("Preloading BERTScore and SLE models...")
+        print("Preloading BERTScore model...")
         preload_bertscorer(
             model_type=args.bertscore_model_type,
             lang=args.bertscore_lang,
             rescale_with_baseline=args.bertscore_rescale_with_baseline,
         )
-        preload_sle_model(
-            model_id=args.sle_model_id,
-            local_files_only=args.sle_local_files_only,
-        )
+        if sle_available:
+            try:
+                preload_sle_model(
+                    model_id=args.sle_model_id,
+                    local_files_only=args.sle_local_files_only,
+                )
+            except Exception as exc:
+                # e.g. liamcripwell/sle-base ships a legacy .bin that transformers
+                # refuses on torch < 2.6. Degrade gracefully: skip SLE, still emit
+                # complex (entity/facts/BERT) + simple_bert + detection scores.
+                print(f"Warning: SLE model unavailable, skipping SLE ({exc}). "
+                      f"simple_sle_* will be null.")
+                sle_available = False
 
     _run_bertscore_stage(
         rows,
@@ -735,11 +860,19 @@ def main() -> None:
         show_progress=args.show_progress,
         desc="Simple BERTScore",
     )
-    _run_simple_sle_stage(
-        rows,
-        args=args,
-        show_progress=args.show_progress,
-    )
+    # BERT done — cache now so a later SLE failure never costs the Qwen+BERT work.
+    _save_stage_cache(rows, stage_cache_path)
+    if sle_available:
+        try:
+            _run_simple_sle_stage(
+                rows,
+                args=args,
+                show_progress=args.show_progress,
+            )
+        except Exception as exc:
+            print(f"Warning: SLE scoring failed, leaving simple_sle_* null ({exc}).")
+    # Persist BERT/SLE results too, so a kill before the final write still resumes.
+    _save_stage_cache(rows, stage_cache_path)
 
     finalized_rows = _finalize_rows(rows)
     _write_jsonl(per_sample_output_path, finalized_rows)

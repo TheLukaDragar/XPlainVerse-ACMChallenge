@@ -12,12 +12,18 @@
 # https://github.com/mjun0812/flash-attention-prebuild-wheels/releases
 # (wheel filename encodes +cuXXXXtorchY.Y — they must match `python3 -c "import torch; print(torch.__version__)"`).
 
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+# devel (not runtime) base: ships nvcc + CUDA headers. ms-swift training pulls in
+# deepspeed, whose import-time `installed_cuda_version()` shells out to
+# `$CUDA_HOME/bin/nvcc -V`. The runtime base has no nvcc, so `swift sft` crashed
+# with FileNotFoundError before training even started. devel also lets deepspeed
+# JIT-compile ZeRO ops at runtime. A100 (sm_80) is covered by CUDA 12.1.
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_ROOT_USER_ACTION=ignore
+    PIP_ROOT_USER_ACTION=ignore \
+    CUDA_HOME=/usr/local/cuda
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev git ca-certificates build-essential \
@@ -40,6 +46,11 @@ RUN grep -vE '^(torch|torchvision|torchaudio)(==|$)' xplainverse_eval_env.txt > 
         torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 \
         --index-url https://download.pytorch.org/whl/cu121
 
+# ms-swift `main` imports FSDP2 (torch.distributed.fsdp.FSDPModule), added in
+# torch 2.6, but this image pins torch 2.4.1 for the cu121 FlashAttention wheel.
+# The training launcher (scripts/train_vlm_v2_lj.sh) adds a sitecustomize shim on
+# PYTHONPATH that provides a harmless FSDPModule placeholder so `swift sft`
+# imports; FSDP2 is unused for LoRA/DDP/ZeRO. Drop the shim once torch >= 2.6.
 ARG MS_SWIFT_REF=main
 WORKDIR /opt/ms-swift
 RUN git clone https://github.com/modelscope/ms-swift.git /opt/ms-swift \
