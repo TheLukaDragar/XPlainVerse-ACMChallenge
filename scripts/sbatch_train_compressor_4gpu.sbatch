@@ -1,8 +1,8 @@
 #!/bin/bash
 # Compressor SFT (complex -> simple) on Frida — 4×GPU, no node pin (fastest start).
 #
-# Trains Qwen3.5-4B LoRA on dataset/train_compressor.jsonl (320k fake rows).
-# Excludes aga (known NCCL/GPU issues May 2026).
+# Trains Qwen3-VL-8B-Instruct LoRA (qwen3_vl) on train_compressor.jsonl (320k fake).
+# Same model stack as VLM v2 training. Excludes aga (NCCL/GPU issues).
 #
 # Submit:
 #   sbatch scripts/sbatch_train_compressor_4gpu.sbatch
@@ -10,15 +10,15 @@
 # Smoke:
 #   TRAIN_SLICE=64 VAL_SLICE=32 MAX_STEPS=2 sbatch --export=ALL,TRAIN_SLICE,VAL_SLICE,MAX_STEPS ...
 #
-#SBATCH --job-name=xpv-compressor
+#SBATCH --job-name=xpv-compressor-vl
 #SBATCH --partition=frida
 #SBATCH --nodes=1
 #SBATCH --exclude=aga
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:A100:4
-#SBATCH --cpus-per-task=64
-#SBATCH --mem=256G
+#SBATCH --cpus-per-task=96
+#SBATCH --mem=850G
 #SBATCH --time=3-00:00:00
 #SBATCH --output=/shared/workspace/lrv/luka/XPlainVerse-ACMChallenge/runs/slurm_compressor_%j.out
 #SBATCH --error=/shared/workspace/lrv/luka/XPlainVerse-ACMChallenge/runs/slurm_compressor_%j.err
@@ -67,10 +67,10 @@ srun \
     export CODE_ROOT=${CODE_ROOT}
     export FRIDA_USER_HOME=${HOME}
     export NPROC_PER_NODE=4
-    export PER_DEVICE_BS=8
-    export GRAD_ACCUM=1
-    export OUTPUT_DIR=${WORKSPACE_ROOT}/runs/compressor_sft
-    export WANDB_RUN_NAME=compressor_sft_4gpu_1ep
+    export PER_DEVICE_BS=2
+    export GRAD_ACCUM=4
+    export OUTPUT_DIR=${WORKSPACE_ROOT}/runs/compressor_vl_sft
+    export WANDB_RUN_NAME=compressor_vl_4gpu_1ep
     export ADD_VERSION=false
     chmod +x ${CODE_ROOT}/scripts/train_compressor_frida.sh
     exec ${CODE_ROOT}/scripts/train_compressor_frida.sh

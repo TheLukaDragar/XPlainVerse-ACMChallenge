@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Frida ms-swift SFT for Qwen3.5-4B compressor: complex explanation -> simple.
+# Frida ms-swift SFT for Qwen3-VL-8B compressor: complex explanation -> simple.
 #
-# Text-only stage-2 model. Trains on fake-only GT pairs from dataset/train_compressor.jsonl
-# (complex paragraph in user message -> short simple sentence in assistant).
+# Same model stack as train_vlm_v2_frida.sh (qwen3_vl). Text-only JSONL —
+# no images in train_compressor.jsonl; ViT stays frozen.
 #
 # See dataset/README.md and dataset/prompt.txt (COMPRESSOR section).
 
@@ -49,10 +49,8 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-$(bash -c "source '${CODE_ROOT}/sc
 
 export NNODES NODE_RANK MASTER_ADDR MASTER_PORT NPROC_PER_NODE CUDA_VISIBLE_DEVICES
 
-MODEL="${MODEL:-Qwen/Qwen3.5-4B}"
-# Qwen3.5-4B matches several templates; use non-thinking instruct for SFT.
-MODEL_TYPE="${MODEL_TYPE:-qwen3_nothinking}"
-TEMPLATE="${TEMPLATE:-qwen3_nothinking}"
+MODEL="${MODEL:-Qwen/Qwen3-VL-8B-Instruct}"
+MODEL_TYPE="${MODEL_TYPE:-qwen3_vl}"
 USE_HF="${USE_HF:-true}"
 
 TRAIN_JSONL="${TRAIN_JSONL:-${CODE_ROOT}/dataset/train_compressor.jsonl}"
@@ -72,13 +70,13 @@ LEARNING_RATE="${LEARNING_RATE:-1.5e-4}"
 LORA_RANK="${LORA_RANK:-16}"
 LORA_ALPHA="${LORA_ALPHA:-32}"
 MAX_LENGTH="${MAX_LENGTH:-2048}"
-OUTPUT_DIR="${OUTPUT_DIR:-${WORKSPACE_ROOT}/runs/compressor_sft}"
+OUTPUT_DIR="${OUTPUT_DIR:-${WORKSPACE_ROOT}/runs/compressor_vl_sft}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 SEED="${SEED:-42}"
 
-# 4 × GPU default: effective batch 32 = 8 × 4 × 1.
-PER_DEVICE_BS="${PER_DEVICE_BS:-8}"
-GRAD_ACCUM="${GRAD_ACCUM:-1}"
+# Match working 4×A100 VLM recipe: effective batch 32.
+PER_DEVICE_BS="${PER_DEVICE_BS:-2}"
+GRAD_ACCUM="${GRAD_ACCUM:-4}"
 
 SAVE_STEPS="${SAVE_STEPS:-500}"
 EVAL_STEPS="${EVAL_STEPS:-500}"
@@ -96,10 +94,7 @@ MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-128}"
 REPORT_TO="${REPORT_TO:-wandb}"
 export WANDB_ENTITY="${WANDB_ENTITY:-luka_borut}"
 export WANDB_PROJECT="${WANDB_PROJECT:-XPlainVerse-ACMChallenge}"
-export WANDB_RUN_NAME="${WANDB_RUN_NAME:-compressor_sft_${NUM_EPOCHS}ep}"
-
-# Qwen3.5 hybrid thinking: ignore empty think blocks during SFT.
-LOSS_SCALE="${LOSS_SCALE:-ignore_empty_think}"
+export WANDB_RUN_NAME="${WANDB_RUN_NAME:-compressor_vl_4gpu_1ep}"
 
 frida_apply_cpu_defaults "${NPROC_PER_NODE}"
 
@@ -174,7 +169,7 @@ EFF_BATCH=$((PER_DEVICE_BS * NPROC_PER_NODE * GRAD_ACCUM * NNODES))
 TRAIN_ROWS=320000
 APPROX_STEPS=$(((TRAIN_ROWS + EFF_BATCH - 1) / EFF_BATCH))
 
-echo "=== XPlainVerse compressor SFT (complex -> simple) ==="
+echo "=== XPlainVerse compressor SFT (Qwen3-VL, complex -> simple) ==="
 echo "model:               ${MODEL} (${MODEL_TYPE})"
 echo "train:               ${TRAIN_DATASET}"
 echo "val:                 ${VAL_JSONL}#${VAL_SLICE}"
@@ -185,7 +180,6 @@ echo "approx steps/epoch:  ${APPROX_STEPS} for ${TRAIN_ROWS} fake rows"
 echo "schedule:            ${TRAIN_SCHEDULE_ARGS[*]}"
 echo "eval/save:           eval_steps=${EVAL_STEPS} save_steps=${SAVE_STEPS}"
 echo "max_length/lr/lora:  ${MAX_LENGTH} / ${LEARNING_RATE} / r=${LORA_RANK} alpha=${LORA_ALPHA}"
-echo "loss_scale:          ${LOSS_SCALE}"
 echo "attn/deepspeed:      ${ATTN_IMPL} / ${DEEPSPEED:-<off>}"
 echo "output:              ${OUTPUT_DIR}"
 if [[ -n "${RESUME_FROM_CHECKPOINT}" ]]; then
@@ -212,9 +206,10 @@ swift sft \
   --max_length "${MAX_LENGTH}" \
   "${TRAIN_SCHEDULE_ARGS[@]}" \
   --per_device_train_batch_size "${PER_DEVICE_BS}" \
-  --per_device_eval_batch_size 4 \
+  --per_device_eval_batch_size 1 \
   --gradient_accumulation_steps "${GRAD_ACCUM}" \
   --gradient_checkpointing true \
+  --vit_gradient_checkpointing false \
   --learning_rate "${LEARNING_RATE}" \
   --lr_scheduler_type cosine \
   --warmup_ratio 0.05 \
@@ -223,7 +218,9 @@ swift sft \
   --lora_rank "${LORA_RANK}" \
   --lora_alpha "${LORA_ALPHA}" \
   --target_modules all-linear \
-  --loss_scale "${LOSS_SCALE}" \
+  --freeze_vit true \
+  --freeze_aligner true \
+  --freeze_llm false \
   --eval_strategy steps \
   --eval_steps "${EVAL_STEPS}" \
   --save_strategy steps \
