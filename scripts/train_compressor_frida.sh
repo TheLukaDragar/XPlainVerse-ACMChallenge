@@ -50,7 +50,9 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-$(bash -c "source '${CODE_ROOT}/sc
 export NNODES NODE_RANK MASTER_ADDR MASTER_PORT NPROC_PER_NODE CUDA_VISIBLE_DEVICES
 
 MODEL="${MODEL:-Qwen/Qwen3.5-4B}"
-MODEL_TYPE="${MODEL_TYPE:-qwen3}"
+# Qwen3.5-4B matches several templates; use non-thinking instruct for SFT.
+MODEL_TYPE="${MODEL_TYPE:-qwen3_nothinking}"
+TEMPLATE="${TEMPLATE:-qwen3_nothinking}"
 USE_HF="${USE_HF:-true}"
 
 TRAIN_JSONL="${TRAIN_JSONL:-${CODE_ROOT}/dataset/train_compressor.jsonl}"
