@@ -16,6 +16,24 @@
 #   BATCH_SIZE        inference batch size (default 32)
 set -euo pipefail
 
+# Always run inside Apptainer with /primoz bound (test images live on NVMe only).
+if [[ -z "${_PASS1_TEST_IN_CONTAINER:-}" ]]; then
+  _HOST_PROJECT="${HOME}/luka/code/XPlainVerse-ACMChallenge"
+  _DEFAULT_REPO_LC="$(echo "${GITHUB_REPOSITORY:-TheLukaDragar/XPlainVerse-ACMChallenge}" | tr '[:upper:]' '[:lower:]')"
+  _IMAGE="${LJ_APPTAINER_IMAGE:-docker://ghcr.io/${_DEFAULT_REPO_LC}-lj:latest}"
+  _SIF="${HOME}/containers/xplainverse-acmchallenge.sif"
+  _BIND="${HOME}:${HOME},/primoz:/primoz"
+  if [[ -d "${_HOST_PROJECT}" ]]; then
+    _BIND="${_BIND},${_HOST_PROJECT}:/workspace/XPlainVerse-ACMChallenge"
+  fi
+  _INNER='export _PASS1_TEST_IN_CONTAINER=1; exec bash scripts/run_pass1_test_tta_lj.sh'
+  if [[ -f "${_SIF}" ]]; then
+    exec apptainer exec --nv -B "${_BIND}" --pwd /workspace/XPlainVerse-ACMChallenge "${_SIF}" bash -c "${_INNER}"
+  else
+    exec apptainer exec --nv -B "${_BIND}" --pwd /workspace/XPlainVerse-ACMChallenge "${_IMAGE}" bash -c "${_INNER}"
+  fi
+fi
+
 _SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [[ -n "${CODE_ROOT:-}" ]]; then :; elif [[ -d "${_SCRIPT_ROOT}/evaluation" ]]; then CODE_ROOT="${_SCRIPT_ROOT}";
 elif [[ -d /workspace/XPlainVerse-ACMChallenge/evaluation ]]; then CODE_ROOT="/workspace/XPlainVerse-ACMChallenge";
