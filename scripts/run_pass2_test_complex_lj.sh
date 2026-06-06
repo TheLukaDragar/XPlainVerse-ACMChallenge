@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pass-2 VLM on full test split — complex explanations only (simple later).
 #
-# Pass-1 verdicts: precomputed TTA ensemble predictions.parquet (p_fake_mean).
+# Pass-1 verdicts: final test predictions (p_fake_orig @ full-val thr). See PASS1_STRATEGY.md.
 # Model: GRPO checkpoint-26400 by default.
 #
 # Sharding (4 GPUs on one node):
@@ -55,9 +55,10 @@ EVAL_DIR="${CODE_ROOT}/evaluation"
 MANIFEST_DIR="${MANIFEST_DIR:-${CODE_ROOT}/research/experiments/02_pass1_classifier/manifests}"
 PROMPT_FILE="${PROMPT_FILE:-${CODE_ROOT}/dataset/prompt.txt}"
 TEST_MANIFEST="${TEST_MANIFEST:-${MANIFEST_DIR}/manifest_test.parquet}"
-PASS1_PRED="${PASS1_PRED:-/home/jakob/luka/runs/pass1_test_tta/20260605-170149/predictions.parquet}"
+PASS1_PRED="${PASS1_PRED:-/home/jakob/luka/runs/pass1_test/final/predictions.parquet}"
 ADAPTERS="${ADAPTERS:-/home/jakob/luka/runs/vlm_v2_grpo/job_48855/checkpoint-26400}"
-THRESHOLD="${THRESHOLD:-0.129}"
+THRESHOLD="${THRESHOLD:-0.0838903859257698}"
+PASS1_SCORE_COL="${PASS1_SCORE_COL:-p_fake_orig}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-512}"
 SHARD_ID="${SHARD_ID:-0}"
 SHARD_COUNT="${SHARD_COUNT:-1}"
@@ -93,6 +94,7 @@ if [[ "${MERGE_ONLY}" != "1" ]]; then
       --ensemble-pred "${PASS1_PRED}" \
       --prompt-file "${PROMPT_FILE}" \
       --threshold "${THRESHOLD}" \
+      --score-col "${PASS1_SCORE_COL}" \
       --shard-id "${SHARD_ID}" \
       --shard-count "${SHARD_COUNT}" \
       --out "${CONDITIONED}" \

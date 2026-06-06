@@ -25,7 +25,7 @@ DEFAULT_REPO_LC="$(echo "${GITHUB_REPOSITORY:-TheLukaDragar/XPlainVerse-ACMChall
 LJ_APPTAINER_IMAGE="${LJ_APPTAINER_IMAGE:-docker://ghcr.io/${DEFAULT_REPO_LC}-lj:latest}"
 APPTAINER_BIND="${LJ_APPTAINER_BIND:-${HOME}:${HOME},/primoz:/primoz},${PROJECT_DIR}:/workspace/XPlainVerse-ACMChallenge"
 
-PASS1_PRED="${PASS1_PRED:-/home/jakob/luka/runs/pass1_test_tta/20260605-170149/predictions.parquet}"
+PASS1_PRED="${PASS1_PRED:-/home/jakob/luka/runs/pass1_test/final/predictions.parquet}"
 ADAPTERS="${ADAPTERS:-/home/jakob/luka/runs/vlm_v2_grpo/job_48855/checkpoint-26400}"
 _TS="$(date -u +%Y%m%d-%H%M%S)"
 OUT_DIR="${OUT_DIR:-/home/jakob/luka/runs/pass2_test_complex/${_TS}}"

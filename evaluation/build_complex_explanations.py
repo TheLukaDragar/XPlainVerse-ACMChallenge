@@ -24,17 +24,18 @@ from utils.challenge_eval_utils import read_jsonl, write_json
 INT2LABEL = {0: "real", 1: "fake"}
 
 
-def load_pass1_labels(parquet_path: Path, *, label_col: str = "pred_label_mean") -> dict[str, str]:
+def load_pass1_labels(parquet_path: Path, *, label_col: str = "pred_label") -> dict[str, str]:
     df = pd.read_parquet(parquet_path)
-    if label_col in df.columns:
-        return {str(sid): INT2LABEL[int(v)] for sid, v in zip(df["sample_id"], df[label_col])}
-    if "p_fake_mean" in df.columns:
-        threshold = 0.129
+    for col in (label_col, "pred_label", "pred_label_mean"):
+        if col in df.columns:
+            return {str(sid): INT2LABEL[int(v)] for sid, v in zip(df["sample_id"], df[col])}
+    if "p_fake_orig" in df.columns:
+        threshold = 0.0838903859257698
         return {
             str(sid): ("fake" if float(p) >= threshold else "real")
-            for sid, p in zip(df["sample_id"], df["p_fake_mean"])
+            for sid, p in zip(df["sample_id"], df["p_fake_orig"])
         }
-    raise ValueError(f"parquet missing {label_col} or p_fake_mean: {parquet_path}")
+    raise ValueError(f"parquet missing pred_label / p_fake_orig: {parquet_path}")
 
 
 def parse_complex_row(
@@ -76,8 +77,8 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path, help="Output JSONL (sample_id, label, complex_explanation)")
     parser.add_argument(
         "--pass1-label-col",
-        default="pred_label_mean",
-        help="Column in pass1 parquet for detection label (default pred_label_mean)",
+        default="pred_label",
+        help="Column in pass1 parquet for detection label (default pred_label)",
     )
     parser.add_argument(
         "--fallback-vlm-verdict",

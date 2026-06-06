@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Build verdict-conditioned Pass-2 infer JSONL for the test split.
 
-Uses Pass-1 ensemble predictions (p_fake_mean) and v2 hypothetical prompts
+Uses Pass-1 ensemble predictions (default: p_fake_orig @ full-val threshold).
+See research/experiments/02_pass1_classifier/PASS1_STRATEGY.md.
 from dataset/prompt.txt. Supports sharding for multi-GPU inference.
 """
 from __future__ import annotations
@@ -41,6 +42,9 @@ def parse_prompt_file(path: Path) -> dict[str, str]:
     return sections
 
 
+INT2LABEL = {0: "real", 1: "fake"}
+
+
 def load_ensemble_verdicts(
     parquet: Path,
     threshold: float,
@@ -48,12 +52,19 @@ def load_ensemble_verdicts(
     score_col: str | None = None,
 ) -> dict[str, str]:
     df = pd.read_parquet(parquet)
+    if "pred_label" in df.columns:
+        return {
+            str(sid): INT2LABEL[int(v)]
+            for sid, v in zip(df["sample_id"], df["pred_label"])
+        }
     if score_col and score_col in df.columns:
         col = score_col
-    elif "p_fake_mean" in df.columns:
-        col = "p_fake_mean"
     elif "p_fake" in df.columns:
         col = "p_fake"
+    elif "p_fake_orig" in df.columns:
+        col = "p_fake_orig"
+    elif "p_fake_mean" in df.columns:
+        col = "p_fake_mean"
     else:
         raise ValueError(f"no score column in {parquet}; columns={list(df.columns)}")
     return {
@@ -67,8 +78,8 @@ def main() -> int:
     parser.add_argument("--test-manifest", required=True, type=Path)
     parser.add_argument("--ensemble-pred", required=True, type=Path)
     parser.add_argument("--prompt-file", required=True, type=Path)
-    parser.add_argument("--threshold", type=float, default=0.129)
-    parser.add_argument("--score-col", default=None)
+    parser.add_argument("--threshold", type=float, default=0.0838903859257698)
+    parser.add_argument("--score-col", default="p_fake_orig")
     parser.add_argument("--shard-id", type=int, default=0)
     parser.add_argument("--shard-count", type=int, default=1)
     parser.add_argument("--out", required=True, type=Path)
