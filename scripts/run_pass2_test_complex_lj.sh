@@ -55,7 +55,7 @@ export PYTHONPATH="${_GRPO_PLUGIN_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 EVAL_DIR="${CODE_ROOT}/evaluation"
 MANIFEST_DIR="${MANIFEST_DIR:-${CODE_ROOT}/research/experiments/02_pass1_classifier/manifests}"
-PROMPT_FILE="${PROMPT_FILE:-${CODE_ROOT}/dataset/prompt.txt}"
+PROMPT_FILE="${PROMPT_FILE:-${CODE_ROOT}/dataset/prompt_v2.txt}"
 TEST_MANIFEST="${TEST_MANIFEST:-${MANIFEST_DIR}/manifest_test.parquet}"
 PASS1_PRED="${PASS1_PRED:-/home/jakob/luka/runs/pass1_test/final/predictions.parquet}"
 ADAPTERS="${ADAPTERS:-/home/jakob/luka/runs/vlm_v2_grpo/job_48855/checkpoint-26400}"

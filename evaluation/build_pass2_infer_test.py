@@ -3,7 +3,7 @@
 
 Uses Pass-1 ensemble predictions (default: p_fake_orig @ full-val threshold).
 See research/experiments/02_pass1_classifier/PASS1_STRATEGY.md.
-from dataset/prompt.txt. Supports sharding for multi-GPU inference.
+from dataset/prompt_v2.txt (FORENSIC prompts — must match GRPO/SFT v2 training).
 """
 from __future__ import annotations
 

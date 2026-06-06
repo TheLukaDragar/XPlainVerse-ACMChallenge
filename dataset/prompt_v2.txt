@@ -1,0 +1,156 @@
+# XPlainVerse ACM-MM 2026 — v2.1 training & inference prompts
+# Parsed by dataset/build_swift_jsonl_v2.py. Sections delimited by:
+#   === SECTION_NAME ===
+# Comment lines (starting with "#") outside sections are ignored.
+#
+# Differences vs dataset/prompt.txt (v1):
+#   * HYPOTHETICAL_FAKE / HYPOTHETICAL_REAL now embed the "FORENSIC ANALYSIS —
+#     a separate AI-generated-content detector has determined this image is X"
+#     preamble. Matches the Pass-2 inference template that gave +4.2
+#     complex_overall in the 27-May-2026 gold-verdict validation experiment
+#     (research/experiments/01_gold_verdict/results/conditioned/eval_results/
+#      final_scores.json). PGT (arXiv 2506.11031) shows VLM forensic-task
+#     performance is brittle to paraphrase — train and infer must match.
+#   * Artifact list extended with mined GT vocabulary:
+#     "overly soft/plastic textures", "lacks fine detail", "blends into
+#     surrounding textures" — top high-frequency words from fake GTs that
+#     v1 prompts never named. See research/07_gt_vocabulary_analysis.md.
+#   * HYPOTHETICAL_FAKE now instructs "Start with 'Most notably' and chain
+#     with 'Additionally'" — 270+ of 2000 fake GTs use exactly that template.
+#   * HYPOTHETICAL_REAL switched to soft-match: keeps the forensic framing
+#     but adds plain-English cues (wrinkles, motion blur, dirt, messy,
+#     candid expressions) that match the actual real-GT register (median
+#     41 words, everyday vocabulary). Pure forensic prose in the v1 real
+#     prompt was the worst register mismatch with the references.
+#   * Primary VLM_USER_PROMPT mostly unchanged; adds "overly soft", "lack
+#     fine detail", "blend into surroundings" to the artifact list and an
+#     authentic-cue clause for the real branch.
+#
+# Design notes carried over:
+#   * Entity F1 + Evidence F1 = 70% of complex score. Prompt must push for
+#     4–6 evidence regions.
+#   * "Examine the style and the synthesis artifacts" is verbatim from PGT
+#     (arXiv 2506.11031, +24.4 macro F1 over default prompt across 3 VLMs);
+#     do NOT paraphrase.
+#   * Forensic-category list ("distorted text, warped geometry, ...") is
+#     verbatim from FakeVLM (arXiv 2503.14905) which reported +12.8 F1 from
+#     this exact category enumeration vs generic prompts.
+#   * Verdict trails the paragraph (evidence before judgment), own line, so
+#     the build_submission.py regex parses it trivially.
+#   * No <reasoning>/<answer> XML, no "Let me think step by step" — FakeVLM
+#     and PGT both show generic CoT hurts forensic VLMs.
+
+
+# ===========================================================================
+# VLM (Qwen3-VL-8B-Instruct) — image -> complex explanation + Verdict
+# ===========================================================================
+# The build script prepends "<image>\n" to the user content for ms-swift
+# multimodal samples. Do NOT include "<image>" here.
+
+
+# --- 1. Primary VLM user prompt --------------------------------------------
+# Used for 50% of training rows in v2 (down from 67% in v1) AND for VLM-only
+# fallback inference when Pass-1 is unavailable or low-confidence.
+=== VLM_USER_PROMPT ===
+TASK: Decide whether this image is a real photograph or AI-generated.
+Examine the style and the synthesis artifacts. Identify several specific
+objects or regions in the image (typically 4–6) and, in one coherent
+paragraph, describe the visual evidence visible in each — distorted text,
+warped geometry, smudged or merged textures, overly soft or plastic
+skin and fabric, regions that lack fine detail or blend into surrounding
+textures, anatomical errors, inconsistent lighting or shadows, unnatural
+object boundaries, or, for real images, authentic everyday cues such as
+wrinkles, crinkles, motion blur, dirt, messy textures, candid expressions,
+and lots of small natural details that would be hard to invent. Use
+connectives such as "Most notably" and "Additionally" to chain the
+observations together.
+
+End your response with a new line containing exactly:
+Verdict: real
+or
+Verdict: fake
+=== END ===
+
+
+# --- 2. Hypothetical-fake prompt (Pass-2 inference template) ---------------
+# Used for 25% of training rows in v2 AND for Pass-2 inference when Pass-1
+# has determined the image to be FAKE.
+# The preamble matches the 27-May gold-verdict validation experiment.
+# Body vocabulary mined from 2000 fake GTs (research/07_gt_vocabulary_analysis.md):
+# verb "appears" (1.6/sample), qualifier "overly", negation "lacks/lacking",
+# phrase "blends into surrounding", body intensifier "particularly", and the
+# canonical "Most notably ... Additionally ..." transition template (270+ of
+# 2000 fakes use it verbatim).
+=== VLM_USER_PROMPT_HYPOTHETICAL_FAKE ===
+FORENSIC ANALYSIS — a separate AI-generated-content detector has determined
+this image is FAKE. Provide the forensic explanation supporting that
+determination.
+
+Identify several specific objects or regions in the image (typically 4–6)
+and, in one coherent paragraph, describe how each region appears
+unnatural — for example, overly soft or plastic textures, regions that
+lack fine detail, edges that blend into surrounding objects without
+proper boundaries, distorted text, warped geometry, smudged or merged
+textures, anatomical errors, or inconsistent lighting or shadows. Start
+the paragraph with "Most notably" to introduce the strongest piece of
+evidence, then use "Additionally" to chain the remaining observations.
+Use "particularly" inside sentences to point to specific subregions.
+
+End your response with a new line containing exactly:
+Verdict: fake
+=== END ===
+
+
+# --- 3. Hypothetical-real prompt (Pass-2 inference template) ---------------
+# Used for 25% of training rows in v2 AND for Pass-2 inference when Pass-1
+# has determined the image to be REAL.
+# Soft-match style (per user, 27-May): keeps the forensic framing but adds
+# the plain-English authentic-cue vocabulary mined from 2000 real GTs:
+# wrinkles/crinkles, messy/dirty surfaces, candid expressions, motion blur,
+# lots of small natural details. Real GTs are 41-word median, written in
+# everyday English — full forensic prose would be a register mismatch.
+=== VLM_USER_PROMPT_HYPOTHETICAL_REAL ===
+FORENSIC ANALYSIS — a separate AI-generated-content detector has determined
+this image is REAL. Provide the forensic explanation supporting that
+determination.
+
+In plain everyday language, identify several specific things in the
+image that make it look like a real photograph — for example wrinkles
+or crinkles in clothing, messy or dirty surfaces, hair or fabric moving
+naturally, candid or unforced facial expressions, motion blur, natural
+lighting and shadows, or lots of small natural details that would be
+hard to invent. Aim for one short paragraph (roughly 1–3 sentences).
+
+End your response with a new line containing exactly:
+Verdict: real
+=== END ===
+
+
+# --- 4. VLM assistant target template (documentation only, not parsed) ----
+# Build the assistant content as:
+#
+#   {ground-truth complex_explanation, verbatim}
+#
+#   Verdict: {real|fake}
+#
+# Unchanged from v1.
+
+
+# ===========================================================================
+# Compressor (Qwen3.5-4B) — complex paragraph -> short simple sentence
+# ===========================================================================
+# v2 doesn't change the compressor. Use dataset/prompt.txt for that.
+# Section kept here only so a v2 build script with --prompt-file=prompt_v2.txt
+# doesn't fail when COMPRESSOR_USER_PROMPT is missing.
+
+=== COMPRESSOR_USER_PROMPT ===
+TASK: Rewrite the explanation below in plain everyday language so a
+non-expert immediately understands why the image looks fake. Use one
+or two short sentences, no more than ~35 words. Keep the single most
+important visual reason and the main object it refers to. Do not
+introduce new facts. Avoid technical vocabulary such as "artifact",
+"synthesis", "inconsistency", "generation", "synthetic", or
+"anatomical".
+
+Explanation:
+=== END ===
