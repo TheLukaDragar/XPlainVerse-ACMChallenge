@@ -17,6 +17,9 @@
 #   SHARD_ID        0..SHARD_COUNT-1 (default 0)
 #   SHARD_COUNT     parallel shards (default 1; sbatch uses 4)
 #   MERGE_ONLY      1 = only merge shards + build complex JSONL (skip infer)
+#   INFER_BACKEND   vllm (default) or transformers
+#   MAX_BATCH_SIZE  transformers batch size (default 16; ignored for vllm)
+#   VLLM_MAX_MODEL_LEN  cap KV cache (default 4096; Qwen3-VL native 262k OOMs)
 set -euo pipefail
 
 if [[ -z "${_PASS2_TEST_IN_CONTAINER:-}" ]]; then
@@ -41,6 +44,14 @@ elif [[ -d /workspace/XPlainVerse-ACMChallenge/evaluation ]]; then CODE_ROOT="/w
 else CODE_ROOT="${HOME}/luka/code/XPlainVerse-ACMChallenge"; fi
 
 export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
+
+# Scrub host conda: vLLM/triton JIT picks up ~/miniconda3/bin/*-cc (HOME is bind-mounted).
+# Same fix as scripts/train_vlm_v2_grpo_lj.sh (cursor/grpo-complex-reward-a544).
+export PATH="/usr/local/bin:/usr/bin:/bin"
+unset CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_SHLVL CONDA_PYTHON_EXE CONDA_EXE LD_PRELOAD 2>/dev/null || true
+export CC=/usr/bin/cc CXX=/usr/bin/c++ GCC=/usr/bin/gcc TRITON_DISABLE_LINE_INFO=1
+export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}"
+
 for _cuda_lib in cu121 cu12 cu13; do
   _nv="/usr/local/lib/python3.10/dist-packages/nvidia/${_cuda_lib}/lib"
   [[ -d "${_nv}" ]] && { export LD_LIBRARY_PATH="${_nv}:${LD_LIBRARY_PATH:-}"; break; }
@@ -62,6 +73,11 @@ ADAPTERS="${ADAPTERS:-/home/jakob/luka/runs/vlm_v2_grpo/job_48855/checkpoint-264
 THRESHOLD="${THRESHOLD:-0.0838903859257698}"
 PASS1_SCORE_COL="${PASS1_SCORE_COL:-p_fake_orig}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-512}"
+INFER_BACKEND="${INFER_BACKEND:-vllm}"
+MAX_BATCH_SIZE="${MAX_BATCH_SIZE:-16}"
+VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-4096}"
+VLLM_MAX_NUM_SEQS="${VLLM_MAX_NUM_SEQS:-32}"
+VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.5}"
 SHARD_ID="${SHARD_ID:-0}"
 SHARD_COUNT="${SHARD_COUNT:-1}"
 MERGE_ONLY="${MERGE_ONLY:-0}"
@@ -83,6 +99,12 @@ echo "  adapters:      ${ADAPTERS}"
 echo "  pass1_pred:    ${PASS1_PRED}"
 echo "  test_manifest: ${TEST_MANIFEST}"
 echo "  shard:         ${SHARD_ID}/${SHARD_COUNT}  GPU=${CUDA_VISIBLE_DEVICES}"
+echo "  infer:         backend=${INFER_BACKEND}  max_new_tokens=${MAX_NEW_TOKENS}"
+if [[ "${INFER_BACKEND}" == "vllm" ]]; then
+  echo "  vllm:          max_model_len=${VLLM_MAX_MODEL_LEN}  max_num_seqs=${VLLM_MAX_NUM_SEQS}  mem_util=${VLLM_GPU_MEMORY_UTILIZATION}"
+else
+  echo "  transformers:  max_batch_size=${MAX_BATCH_SIZE}"
+fi
 echo "  out_dir:       ${OUT_DIR}"
 echo
 
@@ -109,13 +131,24 @@ if [[ "${MERGE_ONLY}" != "1" ]]; then
   if [[ "${_N_INFER}" -ge "${_N_COND}" && "${_N_INFER}" -gt 0 ]]; then
     echo "  [resume] ${INFER_SHARD} (${_N_INFER} rows)"
   else
-    python3 /opt/ms-swift/swift/cli/infer.py \
-      --model Qwen/Qwen3-VL-8B-Instruct --model_type qwen3_vl --use_hf true \
-      --adapters "${ADAPTERS}" \
-      --val_dataset "${CONDITIONED}" \
-      --infer_backend transformers \
-      --max_new_tokens "${MAX_NEW_TOKENS}" \
+    _INFER_ARGS=(
+      --model Qwen/Qwen3-VL-8B-Instruct --model_type qwen3_vl --use_hf true
+      --adapters "${ADAPTERS}"
+      --val_dataset "${CONDITIONED}"
+      --infer_backend "${INFER_BACKEND}"
+      --max_new_tokens "${MAX_NEW_TOKENS}"
       --result_path "${INFER_SHARD}"
+    )
+    if [[ "${INFER_BACKEND}" == "vllm" ]]; then
+      _INFER_ARGS+=(
+        --vllm_max_model_len "${VLLM_MAX_MODEL_LEN}"
+        --vllm_max_num_seqs "${VLLM_MAX_NUM_SEQS}"
+        --vllm_gpu_memory_utilization "${VLLM_GPU_MEMORY_UTILIZATION}"
+      )
+    else
+      _INFER_ARGS+=(--max_batch_size "${MAX_BATCH_SIZE}")
+    fi
+    python3 /opt/ms-swift/swift/cli/infer.py "${_INFER_ARGS[@]}"
   fi
   echo "  shard ${SHARD_ID} done: ${INFER_SHARD}"
 fi
