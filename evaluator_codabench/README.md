@@ -37,22 +37,22 @@ Upload a **zip** containing exactly these files (names must match):
 ### `detection.jsonl`
 
 ```json
-{"id": "000048223b6a3cdfdaa90c26", "pred_label": 1}
+{"id": "000048223b6a3cdfdaa90c26.png", "pred_label": 1}
 ```
 
-- `id`: sample id (string)
+- `id`: test image filename **including extension** (`.png` or `.webp`); must match the released test image name exactly
 - `pred_label`: `0` = real, `1` = fake (strict integers, not booleans)
 
 ### `complex.jsonl`
 
 ```json
-{"id": "000048223b6a3cdfdaa90c26", "complex_explanation": "The puppy's fur appears overly soft..."}
+{"id": "000048223b6a3cdfdaa90c26.png", "complex_explanation": "The puppy's fur appears overly soft..."}
 ```
 
 ### `simple.jsonl`
 
 ```json
-{"id": "000048223b6a3cdfdaa90c26", "simple_explanation": "The puppy looks pasted onto her shirt."}
+{"id": "000048223b6a3cdfdaa90c26.png", "simple_explanation": "The puppy looks pasted onto her shirt."}
 ```
 
 Empty explanation strings are skipped (row not scored for that field). Unknown or duplicate ids fail validation.
@@ -123,10 +123,11 @@ From repo root, turn a single-file val submission into the 3-file zip:
 ```bash
 python3 scripts/build_codabench_submission.py \
   --input /path/to/submission.jsonl \
-  --output /path/to/submission.zip
+  --output /path/to/submission.zip \
+  --manifest research/experiments/02_pass1_classifier/manifests/manifest_test.parquet
 ```
 
-Input lines use the val format: `sample_id`, `label` (`real`|`fake`), `complex_explanation`, `simple_explanation`.
+Input lines use the internal format: `sample_id`, `label` (`real`|`fake`), `complex_explanation`, `simple_explanation`. The builder maps each `sample_id` to the released test filename via `image_path` in the manifest (default: `manifest_test.parquet`). Use `--no-manifest` only for val/dev experiments that still use bare hash ids.
 
 ---
 
