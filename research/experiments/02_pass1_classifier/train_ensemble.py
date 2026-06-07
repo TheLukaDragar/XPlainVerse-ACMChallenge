@@ -109,7 +109,9 @@ def run_validation(model: EnsembleAIDetector, loader: DataLoader, device: str) -
     label_chunks: list[np.ndarray] = []
     sample_ids: list[str] = []
 
-    for siglip, dinov2, labels, ids in loader:
+    from tqdm import tqdm
+
+    for siglip, dinov2, labels, ids in tqdm(loader, desc="val", unit="batch"):
         siglip = siglip.to(device, non_blocking=True)
         dinov2 = dinov2.to(device, non_blocking=True)
         with torch.amp.autocast("cuda", dtype=torch.bfloat16):
