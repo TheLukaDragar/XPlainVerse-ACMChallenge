@@ -23,11 +23,13 @@ docker build -f docker/Dockerfile --build-arg MS_SWIFT_REF=vX.Y.Z -t xplainverse
 
 ## Ljubljana training image (`Dockerfile.lj`)
 
-The default `docker/Dockerfile` targets **CUDA 13 + vLLM** and installs a FlashAttention wheel built for **`cu130` + `torch2.11`**. That wheel is **wrong** for an image built around **PyTorch `+cu121`** (e.g. `2.4.1+cu121` on elixir-lj-gpu): `pip` may succeed but **`import flash_attn` fails** or loads incompatible CUDA symbols.
+**`docker/Dockerfile.lj`** mirrors the eval image stack: **CUDA 13 + torch 2.11 (cu130) + vLLM** on `elixir-lj-gpu-01`. Use this for ms-swift training, GRPO/vLLM, and **Pass-1** (Bombek SigLIP2+DINOv2 ensemble needs **`timm>=1.0.15`** — added in branch `cursor/lj-docker-timm-a544`).
 
-Use **`docker/Dockerfile.lj`** for a **cu121 + torch 2.4.1** stack and a matching prebuilt wheel (`flash_attn-2.8.0+cu121torch2.4`, [mjun0812 v0.3.11](https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.3.11)).
+Do **not** use `~/xplainverse_exec.sh` (local Apptainer SIF) for Pass-1/timm — that image has no `timm` and is read-only. Use:
 
-Also includes **timm** (`>=1.0.15`) for Pass-1 CNN/ViT full fine-tune experiments at 512×512.
+```bash
+./scripts/lj_ghcr_image_exec.sh bash scripts/run_pass1_ensemble_bombek_lj.sh
+```
 
 ```bash
 docker build -f docker/Dockerfile.lj -t xplainverse-lj-train:latest .

@@ -10,26 +10,14 @@ import pandas as pd
 import torch
 from transformers import AutoProcessor
 
-from ensemble_model import create_model_with_lora, dinov2_transform
+from ensemble_model import dinov2_transform
+from load_ensemble_ckpt import load_ensemble_checkpoint
 from train_ensemble import EnsembleManifestDataset, collate_ensemble, run_validation
 from train import load_manifest
 
 
 def load_checkpoint(ckpt_path: Path, device: str):
-    ckpt = torch.load(ckpt_path, map_location="cpu")
-    cfg = ckpt.get("config") or ckpt.get("args", {})
-    model = create_model_with_lora(
-        cfg.get("siglip_model") or cfg.get("siglip", "google/siglip2-so400m-patch14-384"),
-        cfg.get("dinov2_model") or cfg.get("dinov2", "vit_large_patch14_dinov2.lvd142m"),
-        image_size=int(cfg.get("image_size", 392)),
-        lora_rank=int(cfg.get("lora_rank", cfg.get("lora_r", 32))),
-        lora_alpha=int(cfg.get("lora_alpha", cfg.get("lora_alpha", 64))),
-        lora_dropout=float(cfg.get("lora_dropout", 0.1)),
-    )
-    model.load_state_dict(ckpt["model_state_dict"])
-    model.to(device)
-    model.eval()
-    return model, cfg
+    return load_ensemble_checkpoint(ckpt_path, device=device)
 
 
 def main() -> None:

@@ -13,6 +13,7 @@ The Cursor **My Machines worker** (`elixir-lj-gpu`) usually runs on the **Slurm 
 |-----------|----------------|
 | Edit files, git, docs | Worker host (login node) — OK |
 | Python, torch, swift, nvidia-smi, training, eval, inference | **GPU node + Apptainer** — required |
+| Pass-1 Bombek/timm (`train_ensemble.py`, `eval_ensemble*.py`) | **GHCR `-lj` image** via `./scripts/lj_ghcr_image_exec.sh` — `~/xplainverse_exec.sh` has no `timm` |
 
 Never run `python`, `swift`, `torch`, or GPU checks directly on the login node.
 

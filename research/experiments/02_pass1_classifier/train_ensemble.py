@@ -222,6 +222,13 @@ def train(args: argparse.Namespace) -> None:
         hidden_dim=args.head_hidden,
         head_dropout=args.head_dropout,
     )
+    if str(args.init_bombek).strip():
+        from load_ensemble_ckpt import init_model_from_bombek
+
+        init_info = init_model_from_bombek(model, args.init_bombek)
+        run_args["init_bombek"] = init_info
+        if main:
+            print(f"  init_bombek : {init_info['init_from']}")
     model = model.to(args.device)
     args.lora = 1
     model, parallel_gpus, parallel_mode = setup_parallel_model(model, args, is_distributed)
@@ -375,6 +382,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lora", type=int, default=1, help=argparse.SUPPRESS)
     parser.add_argument("--num-gpus", type=int, default=1, help=argparse.SUPPRESS)
     parser.add_argument("--backbone", default="", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--init-bombek",
+        default="",
+        help="Initialize from Bombek HF weights (path or 'bombek' to auto-download).",
+    )
     return parser.parse_args()
 
 

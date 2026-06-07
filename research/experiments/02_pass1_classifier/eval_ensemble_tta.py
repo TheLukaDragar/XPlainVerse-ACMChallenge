@@ -156,12 +156,49 @@ def main() -> None:
             how="left",
         )
         y_true = wide_df["label_int"].astype(int).to_numpy()
-        y_score = wide_df["p_fake_mean"].astype(float).to_numpy()
-        metrics = val_metrics(y_true, y_score)
+        by_score_col: dict[str, dict] = {}
+        for score_col in ("p_fake_orig", "p_fake_flip", "p_fake_mean"):
+            col_metrics = val_metrics(y_true, wide_df[score_col].astype(float).to_numpy())
+            col_metrics["macro_f1_at_best"] = float(
+                f1_score(
+                    y_true,
+                    (wide_df[score_col].astype(float).to_numpy() >= col_metrics["thr_best_f1"]).astype(int),
+                    average="macro",
+                )
+            )
+            col_metrics["real_f1_at_best"] = float(
+                f1_score(
+                    y_true,
+                    (wide_df[score_col].astype(float).to_numpy() >= col_metrics["thr_best_f1"]).astype(int),
+                    pos_label=0,
+                )
+            )
+            col_metrics["pred_fake_rate_at_thr"] = float(
+                (wide_df[score_col].astype(float) >= col_metrics["thr_best_f1"]).mean()
+            )
+            col_metrics["score_mean"] = float(wide_df[score_col].astype(float).mean())
+            by_score_col[score_col] = col_metrics
+
+        metrics = by_score_col["p_fake_mean"]
         thr = metrics["thr_best_f1"]
         wide_df["pred_label_mean"] = (wide_df["p_fake_mean"] >= thr).astype(int)
         metrics["pred_fake_rate_at_thr"] = float(wide_df["pred_label_mean"].mean())
         metrics["p_fake_mean_avg"] = float(wide_df["p_fake_mean"].mean())
+        metrics["by_score_col"] = by_score_col
+        orig = wide_df["p_fake_orig"].astype(float).to_numpy()
+        flip = wide_df["p_fake_flip"].astype(float).to_numpy()
+        diff = np.abs(orig - flip)
+        metrics["flip_analysis"] = {
+            "pearson_orig_flip": float(np.corrcoef(orig, flip)[0, 1]),
+            "median_abs_diff": float(np.median(diff)),
+            "mean_abs_diff": float(diff.mean()),
+            "disagree_at_mean_thr": float(
+                (
+                    (wide_df["p_fake_mean"] >= thr).to_numpy()
+                    != (wide_df["p_fake_orig"] >= by_score_col["p_fake_orig"]["thr_best_f1"]).to_numpy()
+                ).mean()
+            ),
+        }
         metrics["views"] = sorted(long_df["view"].unique().tolist())
         metrics["n_forward_passes"] = int(len(long_df))
     else:
