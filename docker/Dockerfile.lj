@@ -1,0 +1,74 @@
+# XPlainVerse — Ljubljana (elixir-lj-gpu) training image: CUDA 13 + torch 2.11 (cu130) + vLLM.
+#
+# Previously this image pinned torch 2.4.1+cu121. elixir-lj-gpu-01 runs a CUDA 13 driver
+# (NVIDIA-SMI 580), and the cu130/torch2.11 stack runs there fine. The cu121 pin forced
+# workarounds (FSDP2 shim, SLE on old torch, no vLLM GRPO). Moving to cu130/torch2.11
+# (same stack as docker/Dockerfile) fixes those and enables `swift rlhf --rlhf_type grpo`.
+#
+# Pass-1 Bombek ensemble (SigLIP2 + DINOv2 via timm) needs `timm` — see branch
+# cursor/lj-docker-timm-a544 (00ae6a6); included below after sklearn/peft.
+#
+# Build (from repo root):
+#   docker build -f docker/Dockerfile.lj -t xplainverse-lj-train:latest .
+#
+# Run on Lj (NOT ~/xplainverse_exec.sh — that SIF has no timm):
+#   ./scripts/lj_ghcr_image_exec.sh bash scripts/run_pass1_ensemble_bombek_lj.sh
+
+FROM nvidia/cuda:13.0.0-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_ROOT_USER_ACTION=ignore \
+    CUDA_HOME=/usr/local/cuda \
+    LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/nvidia/cu13/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev git ca-certificates build-essential \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --upgrade pip setuptools wheel
+
+# vLLM first — brings torch 2.11+cu130 (correct for elixir-lj-gpu CUDA 13 driver).
+RUN pip install vllm
+
+# Evaluator + ms-swift deps without torch stack (eval env pins cu124 torch — wrong for Lj).
+WORKDIR /tmp
+COPY evaluation/env/xplainverse_eval_env.txt ./xplainverse_eval_env.txt
+RUN grep -vE '^(torch|torchvision|torchaudio)(==|$)' xplainverse_eval_env.txt > /tmp/req_no_torch.txt \
+    && pip install -r /tmp/req_no_torch.txt
+
+ARG MS_SWIFT_REF=main
+WORKDIR /opt/ms-swift
+RUN git clone https://github.com/modelscope/ms-swift.git /opt/ms-swift \
+    && git -C /opt/ms-swift checkout "${MS_SWIFT_REF}" \
+    && pip install -e /opt/ms-swift
+
+# torchvision must match vLLM's torch (0.26.x for torch 2.11 — not the same version number).
+RUN pip install --no-cache-dir torchvision==0.26.0 \
+    --index-url https://download.pytorch.org/whl/cu130
+
+# DeepSpeed ZeRO for multi-GPU SFT/GRPO (devel base ships nvcc for its op build/probe).
+RUN pip install 'deepspeed>=0.14.0'
+
+# Qwen-VL helpers + eval-time NLG metrics (swift sft --predict_with_generate nlg path).
+RUN pip install "qwen_vl_utils>=0.0.14" "decord>=0.6.0" jieba nltk rouge wandb
+
+# Pass-1 classifier + Bombek ensemble: sklearn/peft/pandas/pyarrow + timm (DINOv2 backbones).
+RUN pip install scikit-learn peft pandas pyarrow "timm>=1.0.15" \
+    && python3 -c "import timm, torch, torchvision; print('timm', timm.__version__, 'torch', torch.__version__, 'torchvision', torchvision.__version__)"
+
+# BERTScore for evaluate_val.py and GRPO reward.
+RUN pip install bert_score
+
+# Flash Attention 2 — prebuilt wheel matching torch from vLLM (cu130 / torch 2.11).
+ARG FLASH_ATTN_RELEASE=v0.9.4
+ARG FLASH_ATTN_WHEEL=flash_attn-2.8.3+cu130torch2.11-cp310-cp310-linux_x86_64.whl
+RUN pip install "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${FLASH_ATTN_RELEASE}/${FLASH_ATTN_WHEEL}" \
+    && python3 -c "import flash_attn, torch; print('flash_attn', flash_attn.__version__, 'torch', torch.__version__, 'cuda', torch.version.cuda)"
+
+WORKDIR /workspace/XPlainVerse-ACMChallenge
+COPY . .
+
+CMD ["bash"]
