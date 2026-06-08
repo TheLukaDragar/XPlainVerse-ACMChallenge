@@ -8,13 +8,21 @@
 #   bash scripts/run_calibrated_resubmit_lj.sh
 #
 # Env overrides:
-#   OUT_DIR, OLD_COMPLEX, OLD_COMPRESSOR_INFER, ADAPTERS, COMPRESSOR_ADAPTERS
+#   OUT_DIR, START_STEP (1-6), OLD_COMPLEX, OLD_COMPRESSOR_INFER, ADAPTERS, COMPRESSOR_ADAPTERS
+#   RUN_COMPRESSOR_INFER=0  skip compressor GPU step when reusing an existing patch
 
 set -euo pipefail
 
 if [[ -z "${_CALIBRATED_IN_CONTAINER:-}" ]]; then
   export _CALIBRATED_IN_CONTAINER=1
-  exec ./scripts/lj_ghcr_image_exec.sh bash -c 'export _CALIBRATED_IN_CONTAINER=1 HOME=/home/jakob; exec bash scripts/run_calibrated_resubmit_lj.sh'
+  _INNER="export _CALIBRATED_IN_CONTAINER=1 HOME=/home/jakob"
+  [[ -n "${OUT_DIR:-}" ]] && _INNER+=" OUT_DIR=$(printf '%q' "${OUT_DIR}")"
+  [[ -n "${START_STEP:-}" ]] && _INNER+=" START_STEP=$(printf '%q' "${START_STEP}")"
+  [[ -n "${RUN_COMPRESSOR_INFER:-}" ]] && _INNER+=" RUN_COMPRESSOR_INFER=$(printf '%q' "${RUN_COMPRESSOR_INFER}")"
+  [[ -n "${OLD_COMPLEX:-}" ]] && _INNER+=" OLD_COMPLEX=$(printf '%q' "${OLD_COMPLEX}")"
+  [[ -n "${OLD_COMPRESSOR_INFER:-}" ]] && _INNER+=" OLD_COMPRESSOR_INFER=$(printf '%q' "${OLD_COMPRESSOR_INFER}")"
+  _INNER+="; exec bash scripts/run_calibrated_resubmit_lj.sh"
+  exec ./scripts/lj_ghcr_image_exec.sh bash -c "${_INNER}"
 fi
 
 _SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,7 +43,10 @@ NEW_THRESHOLD="${NEW_THRESHOLD:-0.11}"
 SHARD_COUNT="${SHARD_COUNT:-4}"
 
 _TS="$(date -u +%Y%m%d-%H%M%S)"
-OUT_DIR="${OUT_DIR:-/home/jakob/luka/runs/submission_calibrated_mean011_${_TS}}"
+ROOT_OUT="${OUT_DIR:-/home/jakob/luka/runs/submission_calibrated_mean011_${_TS}}"
+OUT_DIR="${ROOT_OUT}"
+FULL_TEST_MANIFEST="${TEST_MANIFEST}"
+START_STEP="${START_STEP:-1}"
 mkdir -p "${OUT_DIR}"
 
 export PYTHONNOUSERSITE=1
@@ -49,89 +60,123 @@ export TORCH_COMPILE_DISABLE=1 VLLM_USE_FLASHINFER_SAMPLER=0
 
 echo "=== Calibrated resubmit pipeline ==="
 echo "  out_dir:     ${OUT_DIR}"
+echo "  start_step:  ${START_STEP}"
 echo "  operating:   ${NEW_SCORE_COL} @ ${NEW_THRESHOLD}"
 echo "  pass2_adapt: ${PASS2_ADAPTERS}"
 echo
 
-echo "=== [1/6] Recut Pass-1 + flip manifest ==="
-python3 "${EVAL_DIR}/prepare_recalibrated_pass1.py" \
-  --test-tta "${TEST_TTA}" \
-  --test-manifest "${TEST_MANIFEST}" \
-  --out-dir "${OUT_DIR}" \
-  --new-score-col "${NEW_SCORE_COL}" \
-  --new-threshold "${NEW_THRESHOLD}"
-
+PASS2_OUT="${OUT_DIR}/pass2_flip"
+COMPRESSOR_OUT="${OUT_DIR}/compressor_flip"
 PASS1_PRED="${OUT_DIR}/pass1_test_predictions.parquet"
 FLIP_MANIFEST="${OUT_DIR}/manifest_test_flips.parquet"
-N_FLIPS="$(python3 -c "import json; print(len(json.load(open('${OUT_DIR}/recalibration_summary.json'))['flip_sample_ids']))")"
+COMPLEX_MERGED="${OUT_DIR}/complex_explanations_merged.jsonl"
+COMPRESSOR_MERGED="${OUT_DIR}/compressor_infer_merged.jsonl"
+SUBMISSION_JSONL="${OUT_DIR}/submission.jsonl"
+SUBMISSION_ZIP="${OUT_DIR}/submission.zip"
+
+if [[ "${START_STEP}" -le 1 ]]; then
+  echo "=== [1/6] Recut Pass-1 + flip manifest ==="
+  python3 "${EVAL_DIR}/prepare_recalibrated_pass1.py" \
+    --test-tta "${TEST_TTA}" \
+    --test-manifest "${FULL_TEST_MANIFEST}" \
+    --out-dir "${OUT_DIR}" \
+    --new-score-col "${NEW_SCORE_COL}" \
+    --new-threshold "${NEW_THRESHOLD}"
+fi
+
+N_FLIPS="$(python3 -c "import json; print(json.load(open('${OUT_DIR}/recalibration_summary.json'))['n_flips'])")"
 echo "  flips: ${N_FLIPS}"
 
-PASS2_OUT="${OUT_DIR}/pass2_flip"
-mkdir -p "${PASS2_OUT}"
+if [[ "${START_STEP}" -le 2 ]]; then
+  mkdir -p "${PASS2_OUT}"
+  echo "=== [2/6] Pass-2 complex on ${N_FLIPS} flipped images (${SHARD_COUNT} GPU) ==="
+  (
+    export PASS1_PRED ADAPTERS="${PASS2_ADAPTERS}" OUT_DIR="${PASS2_OUT}"
+    export TEST_MANIFEST="${FLIP_MANIFEST}"
+    export THRESHOLD="${NEW_THRESHOLD}" PASS1_SCORE_COL="${NEW_SCORE_COL}"
+    export _PASS2_TEST_IN_CONTAINER=1 SHARD_COUNT
 
-echo "=== [2/6] Pass-2 complex on ${N_FLIPS} flipped images (${SHARD_COUNT} GPU) ==="
-export PASS1_PRED ADAPTERS="${PASS2_ADAPTERS}" OUT_DIR="${PASS2_OUT}"
-export TEST_MANIFEST="${FLIP_MANIFEST}"
-export THRESHOLD="${NEW_THRESHOLD}" PASS1_SCORE_COL="${NEW_SCORE_COL}"
-export _PASS2_TEST_IN_CONTAINER=1 SHARD_COUNT
+    for SHARD in $(seq 0 $((SHARD_COUNT - 1))); do
+      CUDA_VISIBLE_DEVICES="${SHARD}" SHARD_ID="${SHARD}" SHARD_COUNT="${SHARD_COUNT}" \
+        bash "${CODE_ROOT}/scripts/run_pass2_test_complex_lj.sh" &
+    done
+    wait
 
-for SHARD in $(seq 0 $((SHARD_COUNT - 1))); do
-  CUDA_VISIBLE_DEVICES="${SHARD}" SHARD_ID="${SHARD}" SHARD_COUNT="${SHARD_COUNT}" \
-    bash "${CODE_ROOT}/scripts/run_pass2_test_complex_lj.sh" &
-done
-wait
-
-MERGE_ONLY=1 SHARD_ID=0 SHARD_COUNT="${SHARD_COUNT}" \
-  bash "${CODE_ROOT}/scripts/run_pass2_test_complex_lj.sh"
+    MERGE_ONLY=1 SHARD_ID=0 SHARD_COUNT="${SHARD_COUNT}" \
+      bash "${CODE_ROOT}/scripts/run_pass2_test_complex_lj.sh"
+  )
+fi
 
 COMPLEX_PATCH="${PASS2_OUT}/complex_explanations.jsonl"
 echo "  complex_patch: $(wc -l < "${COMPLEX_PATCH}") rows"
 
+if [[ "${START_STEP}" -le 3 ]]; then
 echo "=== [3/6] Merge complex explanations ==="
-COMPLEX_MERGED="${OUT_DIR}/complex_explanations_merged.jsonl"
 python3 "${EVAL_DIR}/merge_jsonl_by_id.py" \
   --base "${OLD_COMPLEX}" \
   --patch "${COMPLEX_PATCH}" \
   --output "${COMPLEX_MERGED}" \
   --sort-by-id
+fi
 
-echo "=== [4/6] Compressor on flipped fakes only ==="
-COMPRESSOR_OUT="${OUT_DIR}/compressor_flip"
-mkdir -p "${COMPRESSOR_OUT}"
-export OUT_DIR="${COMPRESSOR_OUT}" COMPLEX_IN="${COMPLEX_PATCH}" ADAPTERS="${COMPRESSOR_ADAPTERS}"
-export _COMPRESSOR_IN_CONTAINER=1
+RUN_COMPRESSOR_INFER="${RUN_COMPRESSOR_INFER:-}"
+if [[ -z "${RUN_COMPRESSOR_INFER}" ]]; then
+  [[ "${START_STEP}" -le 2 ]] && RUN_COMPRESSOR_INFER=1 || RUN_COMPRESSOR_INFER=0
+fi
 
-for SHARD in $(seq 0 $((SHARD_COUNT - 1))); do
-  CUDA_VISIBLE_DEVICES="${SHARD}" SHARD_ID="${SHARD}" SHARD_COUNT="${SHARD_COUNT}" \
-    bash "${CODE_ROOT}/scripts/run_compressor_test_lj.sh" &
-done
-wait
+if [[ "${RUN_COMPRESSOR_INFER}" == 1 ]]; then
+  echo "=== [4/6] Compressor on flipped fakes only ==="
+  mkdir -p "${COMPRESSOR_OUT}"
+  (
+    export OUT_DIR="${COMPRESSOR_OUT}" COMPLEX_IN="${COMPLEX_PATCH}" ADAPTERS="${COMPRESSOR_ADAPTERS}"
+    export _COMPRESSOR_IN_CONTAINER=1 SHARD_COUNT
 
-MERGE_ONLY=1 SHARD_ID=0 SHARD_COUNT="${SHARD_COUNT}" \
-  bash "${CODE_ROOT}/scripts/run_compressor_test_lj.sh"
+    for SHARD in $(seq 0 $((SHARD_COUNT - 1))); do
+      CUDA_VISIBLE_DEVICES="${SHARD}" SHARD_ID="${SHARD}" SHARD_COUNT="${SHARD_COUNT}" \
+        bash "${CODE_ROOT}/scripts/run_compressor_test_lj.sh" &
+    done
+    wait
 
-# run_compressor merge writes submission but only from patch complex — grab infer only.
-COMPRESSOR_PATCH_INFER="${COMPRESSOR_OUT}/compressor_infer.jsonl"
-COMPRESSOR_MERGED="${OUT_DIR}/compressor_infer_merged.jsonl"
-python3 "${EVAL_DIR}/merge_jsonl_by_id.py" \
-  --base "${OLD_COMPRESSOR_INFER}" \
-  --patch "${COMPRESSOR_PATCH_INFER}" \
-  --output "${COMPRESSOR_MERGED}"
+    MERGE_ONLY=1 SHARD_ID=0 SHARD_COUNT="${SHARD_COUNT}" \
+      bash "${CODE_ROOT}/scripts/run_compressor_test_lj.sh"
+  )
+else
+  echo "=== [4/6] Compressor infer skipped (RUN_COMPRESSOR_INFER=0) ==="
+fi
 
+# Prefer canonical compressor_flip/; fall back to legacy pass2_flip/compressor_flip/ from buggy runs.
+if [[ -n "${COMPRESSOR_PATCH_INFER:-}" ]]; then
+  :
+elif [[ -f "${COMPRESSOR_OUT}/compressor_infer.jsonl" ]]; then
+  COMPRESSOR_PATCH_INFER="${COMPRESSOR_OUT}/compressor_infer.jsonl"
+else
+  COMPRESSOR_PATCH_INFER="${PASS2_OUT}/compressor_flip/compressor_infer.jsonl"
+fi
+if [[ "${START_STEP}" -le 5 && "${SKIP_COMPRESSOR_MERGE:-0}" != 1 ]]; then
+  echo "=== [4b/6] Merge compressor infer (base + flip patch) ==="
+  python3 "${EVAL_DIR}/merge_compressor_infer.py" \
+    --base-infer "${OLD_COMPRESSOR_INFER}" \
+    --base-complex "${OLD_COMPLEX}" \
+    --patch-infer "${COMPRESSOR_PATCH_INFER}" \
+    --output "${COMPRESSOR_MERGED}"
+fi
+
+if [[ "${START_STEP}" -le 5 ]]; then
 echo "=== [5/6] Build full submission JSONL ==="
-SUBMISSION_JSONL="${OUT_DIR}/submission.jsonl"
 python3 "${EVAL_DIR}/build_simple_explanations.py" \
   --complex "${COMPLEX_MERGED}" \
   --compressor-infer "${COMPRESSOR_MERGED}" \
   --output "${SUBMISSION_JSONL}" \
   --errors-json "${OUT_DIR}/simple_errors.json"
+fi
 
+if [[ "${START_STEP}" -le 6 ]]; then
 echo "=== [6/6] CodaBench zip ==="
-SUBMISSION_ZIP="${OUT_DIR}/submission.zip"
 python3 "${CODE_ROOT}/scripts/build_codabench_submission.py" \
   --input "${SUBMISSION_JSONL}" \
   --output "${SUBMISSION_ZIP}" \
-  --manifest "${TEST_MANIFEST}"
+  --manifest "${FULL_TEST_MANIFEST}"
+fi
 
 python3 - <<PY
 import json
