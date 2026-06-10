@@ -7,10 +7,11 @@ Outputs under manifests/external/:
   manifest_genimage_train.parquet   (only if extracted tree exists)
   manifest_external_mix_v1.parquet  (optional combined mix)
 
-OpenFake images stay in parquet; image_path uses:
-  openfake://<parquet_path>#<row_idx>
+  manifest_openfake_jpeg_0-14.parquet  (JPEG paths on /primoz after extract)
+  manifest_all_v1.parquet              (XP pooled + OpenFake JPEG + DFBench train)
 
-Training must load these via a parquet-aware dataset (see DATA_MIX.md).
+Run full prep (extract + manifests):
+  ./scripts/prepare_external_training_lj.sh
 
 Usage (login node — OpenFake only):
   python3 build_manifest_external.py --only openfake
@@ -33,6 +34,7 @@ import pyarrow.parquet as pq
 LABEL2INT = {"real": 0, "fake": 1}
 
 OPENFAKE_ROOT = Path(os.environ.get("OPENFAKE_ROOT", "/home/jakob/luka/data/external/OpenFake"))
+OPENFAKE_JPEG_ROOT = Path(os.environ.get("OPENFAKE_JPEG_ROOT", "/primoz/luka/external/OpenFake_jpeg"))
 DFBENCH_ROOT = Path(os.environ.get("DFBENCH_ROOT", "/primoz/luka/external/DFBench"))
 GENIMAGE_ROOT = Path(os.environ.get("GENIMAGE_ROOT", "/primoz/luka/external/GenImage"))
 
@@ -128,7 +130,48 @@ def build_openfake(max_group: int = 14) -> pd.DataFrame:
     return df
 
 
-def build_dfbench(split: str = "train") -> pd.DataFrame:
+def build_openfake_jpeg(max_group: int = 14, require_exists: bool = False) -> pd.DataFrame:
+    shards = openfake_shards(max_group)
+    if not shards:
+        raise RuntimeError(f"no OpenFake shards found under {OPENFAKE_ROOT}/core (groups 0-{max_group})")
+
+    rows: list[dict] = []
+    missing = 0
+    for shard in shards:
+        table = pq.read_table(shard, columns=["label", "model"])
+        labels = table.column("label").to_pylist()
+        models = table.column("model").to_pylist()
+        rel = shard.relative_to(OPENFAKE_ROOT)
+        jpeg_dir = OPENFAKE_JPEG_ROOT / rel.parent / rel.stem
+        for i, (lab, model) in enumerate(zip(labels, models)):
+            label = str(lab).strip().lower()
+            if label not in LABEL2INT:
+                continue
+            image_path = str(jpeg_dir / f"{i:06d}.jpg")
+            exists = Path(image_path).is_file() and Path(image_path).stat().st_size > 1024
+            if not exists:
+                missing += 1
+                if require_exists:
+                    continue
+            rows.append({
+                "sample_id": f"openfake_{rel.as_posix().replace('/', '_')}_{i}",
+                "image_path": image_path,
+                "label": label,
+                "label_int": LABEL2INT[label],
+                "source": "openfake",
+                "generator": str(model) if model is not None else "",
+                "file_exists": exists,
+            })
+
+    df = pd.DataFrame(rows)
+    print(
+        f"openfake_jpeg groups 0-{max_group}: {len(df)} rows; "
+        f"class counts: {df.label.value_counts().to_dict()}; files_missing={missing}"
+    )
+    return df
+
+
+def build_dfbench(split: str = "train", require_exists: bool = False) -> pd.DataFrame:
     jsonl = DFBENCH_ROOT / ("img_train.jsonl" if split == "train" else "img_test.jsonl")
     if not jsonl.is_file():
         raise FileNotFoundError(jsonl)
@@ -145,6 +188,8 @@ def build_dfbench(split: str = "train") -> pd.DataFrame:
         exists = Path(image_path).is_file()
         if not exists:
             missing += 1
+            if require_exists:
+                continue
         parts = Path(rel).parts
         generator = parts[1] if len(parts) >= 2 else "unknown"
         sid = f"dfbench_{generator}_{Path(rel).stem}"
@@ -252,13 +297,62 @@ def build_mix_v1(
     return mix
 
 
+def _load_openfake_jpeg_manifest(require_exists: bool) -> pd.DataFrame:
+    cached = out_dir() / "manifest_openfake_jpeg_0-14.parquet"
+    if cached.is_file() and require_exists:
+        df = pd.read_parquet(cached)
+        if "file_exists" in df.columns:
+            df = df[df.file_exists].copy()
+        return df
+    return build_openfake_jpeg(require_exists=require_exists)
+
+
+def _load_dfbench_manifest(require_exists: bool) -> pd.DataFrame:
+    cached = out_dir() / "manifest_dfbench_train.parquet"
+    jsonl = DFBENCH_ROOT / "img_train.jsonl"
+    if jsonl.is_file():
+        return build_dfbench("train", require_exists=require_exists)
+    if cached.is_file():
+        df = pd.read_parquet(cached)
+        if require_exists and "file_exists" in df.columns:
+            df = df[df.file_exists].copy()
+        print(f"dfbench: loaded cached manifest ({len(df)} rows)")
+        return df
+    raise FileNotFoundError(f"dfbench jsonl missing ({jsonl}) and no cached {cached}")
+
+
+def build_all_v1(xplainverse_pooled: Path, seed: int = 0, require_exists: bool = True) -> pd.DataFrame:
+    """Full combined training manifest: XP pooled + OpenFake JPEG 0-14 + DFBench train."""
+    parts: list[pd.DataFrame] = []
+
+    xp = pd.read_parquet(xplainverse_pooled)
+    xp = xp.assign(source="xplainverse", generator="xplainverse", file_exists=True)
+    parts.append(xp)
+    print(f"all_v1 base xplainverse: {len(xp)} rows")
+
+    of = _load_openfake_jpeg_manifest(require_exists)
+    if len(of):
+        parts.append(of.drop(columns=["file_exists"], errors="ignore"))
+        print(f"all_v1 + openfake_jpeg: {len(of)}")
+
+    df = _load_dfbench_manifest(require_exists)
+    if len(df):
+        parts.append(df.drop(columns=["file_exists"], errors="ignore"))
+        print(f"all_v1 + dfbench: {len(df)}")
+
+    all_df = pd.concat(parts, ignore_index=True).sample(frac=1, random_state=seed).reset_index(drop=True)
+    print(f"all_v1 total: {len(all_df)} rows; class counts: {all_df.label.value_counts().to_dict()}")
+    return all_df
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build external dataset manifests for Pass-1")
     parser.add_argument(
         "--only",
-        choices=["openfake", "dfbench", "genimage", "mix", "all"],
-        default="all",
+        choices=["openfake", "openfake_jpeg", "dfbench", "genimage", "mix", "all_v1", "all"],
+        default="all_v1",
     )
+    parser.add_argument("--require-exists", action="store_true", default=False)
     parser.add_argument("--openfake-max-group", type=int, default=14)
     parser.add_argument("--openfake-cap", type=int, default=150_000)
     parser.add_argument("--dfbench-fake-cap", type=int, default=100_000)
@@ -272,14 +366,22 @@ def main() -> None:
     od = out_dir()
     print(f"manifest out: {od}")
 
+    req = args.require_exists
+
     if args.only in {"openfake", "all"}:
         df = build_openfake(args.openfake_max_group)
         path = od / "manifest_openfake_core_0-14.parquet"
         df.to_parquet(path)
         print(f"wrote {path}")
 
+    if args.only in {"openfake_jpeg", "all_v1", "all"}:
+        df = build_openfake_jpeg(args.openfake_max_group, require_exists=req)
+        path = od / "manifest_openfake_jpeg_0-14.parquet"
+        df.to_parquet(path)
+        print(f"wrote {path}")
+
     if args.only in {"dfbench", "all"}:
-        df = build_dfbench("train")
+        df = build_dfbench("train", require_exists=req)
         path = od / "manifest_dfbench_train.parquet"
         df.to_parquet(path)
         print(f"wrote {path}")
@@ -299,6 +401,14 @@ def main() -> None:
             path = od / "manifest_external_mix_v1.parquet"
             df.to_parquet(path)
             print(f"wrote {path}")
+
+    if args.only in {"all_v1", "all"}:
+        if not args.xplainverse_pooled.is_file():
+            raise FileNotFoundError(args.xplainverse_pooled)
+        df = build_all_v1(args.xplainverse_pooled, require_exists=req)
+        path = od / "manifest_all_v1.parquet"
+        df.to_parquet(path)
+        print(f"wrote {path}")
 
 
 if __name__ == "__main__":
