@@ -62,16 +62,22 @@ Warm-start from best resume ckpt. One epoch max initially.
 - Training on DFBench/GenImage **test** splits
 - GenImage BigGAN 128px at large weight (upscale artifacts ≠ XPlainVerse)
 
-## Implementation gaps before training
+## Prep + training (in progress)
 
-1. **DFBench unzip** on `/primoz` (21 ZIPs → `DFBench/<source>/`)
-2. **`EnsembleManifestDataset`** — support `openfake://shard#row` paths (read parquet bytes at `__getitem__`)
-3. Optional: **weighted sampler** per source instead of pre-merged manifest
+**CPU extraction** (tmux: `extract-dfbench`, `extract-openfake`):
+- DFBench → `/primoz/luka/external/DFBench/DFBench/`
+- OpenFake JPEG → `/primoz/luka/external/OpenFake_jpeg/`
 
-## OpenFake path format
+**Manifest** `manifest_all_v1.parquet` — **2,076,717 rows** (~37% real):
+XP 559k + OpenFake 1.08M + DFBench 437k
 
+```bash
+# After extraction completes:
+./scripts/finish_external_manifest_lj.sh
+
+# Train (warm-start resume ckpt, 1 epoch):
+LJ_GPU_GRES=gpu:4 LJ_GPU_TIME=120:00:00 \
+  ./scripts/lj_ghcr_image_exec.sh bash scripts/run_pass1_ensemble_external_all_lj.sh
 ```
-openfake://core/train-00000-of-00032-00000.parquet#1234
-```
 
-Resolved relative to `OPENFAKE_ROOT` (`/home/jakob/luka/data/external/OpenFake`).
+Init: `trainval_resume_e2-4_20260610-181626/best_ckpt/ckpt.pt` (holdout macro F1 **0.972**)
