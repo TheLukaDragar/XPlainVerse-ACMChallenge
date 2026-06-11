@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Pass-1 ensemble: combined fine-tune on XP pooled + OpenFake 0-14 + DFBench.
+# Pass-1 ensemble: FROM-SCRATCH train on XP pooled + OpenFake 0-14 + DFBench.
 #
-# Warm-start from trainval_resume best checkpoint. 1 epoch default (~2M images).
+# No warm-start — fresh LoRA + head on pretrained SigLIP/DINOv2 backbones only.
+# 1 epoch default (~2M images). Override INIT_BOMBEK only if you explicitly want a ckpt.
 #
 # Prereq: ./scripts/prepare_external_training_lj.sh finished successfully.
 #
@@ -43,26 +44,26 @@ IMAGE_SIZE="${IMAGE_SIZE:-392}"
 EPOCHS="${EPOCHS:-1}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 GRAD_ACCUM="${GRAD_ACCUM:-4}"
-LR_HEAD="${LR_HEAD:-5e-5}"
-LR_LORA="${LR_LORA:-2e-5}"
+LR_HEAD="${LR_HEAD:-2e-4}"
+LR_LORA="${LR_LORA:-5e-5}"
 LORA_R="${LORA_R:-32}"
 LORA_ALPHA="${LORA_ALPHA:-64}"
 LORA_DROPOUT="${LORA_DROPOUT:-0.1}"
 AUGMENT="${AUGMENT:-1}"
 VAL_SLICE="${VAL_SLICE:-0}"
 SELECT_METRIC="${SELECT_METRIC:-macro_f1}"
-INIT_BOMBEK="${INIT_BOMBEK:-/home/jakob/luka/runs/pass1_ensemble/trainval_resume_e2-4_20260610-181626/best_ckpt/ckpt.pt}"
+INIT_BOMBEK="${INIT_BOMBEK:-}"
 TRAIN_MANIFEST="${TRAIN_MANIFEST:-${MANIFEST_DIR}/external/manifest_all_v1.parquet}"
 VAL_MANIFEST="${VAL_MANIFEST:-${MANIFEST_DIR}/manifest_val_holdout.parquet}"
 
 _RUN_TS="$(date -u +%Y%m%d-%H%M%S)"
-OUTPUT_DIR="${OUTPUT_DIR:-${LJ_RUNS_ROOT}/pass1_ensemble/external_all_v1_${_RUN_TS}}"
+OUTPUT_DIR="${OUTPUT_DIR:-${LJ_RUNS_ROOT}/pass1_ensemble/external_all_scratch_${_RUN_TS}}"
 
 REPORT_TO="${REPORT_TO:-wandb}"
 export WANDB_ENTITY="${WANDB_ENTITY:-luka_borut}"
 export WANDB_PROJECT="${WANDB_PROJECT:-XPlainVerse-ACMChallenge}"
-export WANDB_RUN_NAME="${WANDB_RUN_NAME:-pass1_external_all_v1_${_RUN_TS}}"
-export WANDB_TAGS="${WANDB_TAGS:-pass1,ensemble,external-all-v1,macro-f1,${NPROC_PER_NODE}gpu}"
+export WANDB_RUN_NAME="${WANDB_RUN_NAME:-pass1_external_all_scratch_${_RUN_TS}}"
+export WANDB_TAGS="${WANDB_TAGS:-pass1,ensemble,external-all,from-scratch,macro-f1,${NPROC_PER_NODE}gpu}"
 
 if [[ "${REPORT_TO}" == *wandb* ]]; then
   ENSEMBLE_REPORT_TO=wandb
@@ -70,7 +71,7 @@ else
   ENSEMBLE_REPORT_TO=none
 fi
 
-if [[ ! -f "${INIT_BOMBEK}" ]]; then
+if [[ -n "${INIT_BOMBEK}" && ! -f "${INIT_BOMBEK}" ]]; then
   echo "ERROR: init checkpoint not found: ${INIT_BOMBEK}" >&2
   exit 1
 fi
@@ -86,10 +87,14 @@ fi
 
 mkdir -p "${OUTPUT_DIR}"
 EFF=$((BATCH_SIZE * NPROC_PER_NODE * GRAD_ACCUM))
-echo "=== Pass-1 ensemble EXTERNAL ALL v1 ==="
+echo "=== Pass-1 ensemble EXTERNAL ALL (from scratch) ==="
 echo "  train       : ${TRAIN_MANIFEST}"
 echo "  val(holdout): ${VAL_MANIFEST}"
-echo "  init        : ${INIT_BOMBEK}"
+if [[ -n "${INIT_BOMBEK}" ]]; then
+  echo "  init        : ${INIT_BOMBEK}"
+else
+  echo "  init        : from scratch (pretrained backbones only)"
+fi
 echo "  epochs      : ${EPOCHS}  lr_head=${LR_HEAD}  lr_lora=${LR_LORA}"
 echo "  eff_batch   : ${EFF}"
 echo "  output      : ${OUTPUT_DIR}"

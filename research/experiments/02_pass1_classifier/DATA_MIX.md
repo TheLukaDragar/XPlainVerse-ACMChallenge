@@ -75,9 +75,9 @@ XP 559k + OpenFake 1.08M + DFBench 437k
 # After extraction completes:
 ./scripts/finish_external_manifest_lj.sh
 
-# Train (warm-start resume ckpt, 1 epoch):
+# Train FROM SCRATCH on combined data (1 epoch, no resume ckpt):
 LJ_GPU_GRES=gpu:4 LJ_GPU_TIME=120:00:00 \
   ./scripts/lj_ghcr_image_exec.sh bash scripts/run_pass1_ensemble_external_all_lj.sh
 ```
 
-Init: `trainval_resume_e2-4_20260610-181626/best_ckpt/ckpt.pt` (holdout macro F1 **0.972**)
+Fresh LoRA + head; pretrained SigLIP/DINOv2 backbones only. Do **not** warm-start from trainval resume.
