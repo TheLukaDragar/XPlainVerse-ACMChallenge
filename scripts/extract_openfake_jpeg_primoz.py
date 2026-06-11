@@ -44,7 +44,9 @@ def extract_shard(shard: Path, skip_existing: bool) -> int:
             continue
         img_struct = col[i].as_py()
         raw = img_struct.get("bytes")
-        if not raw:
+        if not raw or raw[:15].lstrip().startswith((b"<!", b"<html", b"<HTML")):
+            continue
+        if raw[:2] not in (b"\xff\xd8", b"\x89P") and raw[:4] != b"RIFF":
             continue
         out_path.write_bytes(raw)
         n += 1
