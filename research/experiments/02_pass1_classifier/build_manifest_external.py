@@ -190,6 +190,8 @@ def build_dfbench(split: str = "train", require_exists: bool = False) -> pd.Data
             missing += 1
             if require_exists:
                 continue
+        if Path(rel).name.startswith("._"):
+            continue
         parts = Path(rel).parts
         generator = parts[1] if len(parts) >= 2 else "unknown"
         sid = f"dfbench_{generator}_{Path(rel).stem}"
