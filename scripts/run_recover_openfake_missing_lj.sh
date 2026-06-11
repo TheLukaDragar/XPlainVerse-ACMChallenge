@@ -8,7 +8,7 @@ LOG="${HOME}/luka/runs/prepare_external/recover_openfake_missing.log"
 mkdir -p "$(dirname "$LOG")"
 LJ_CPU_TIME="${LJ_CPU_TIME:-72:00:00}" LJ_CPU_CPUS="${LJ_CPU_CPUS:-16}" LJ_CPU_MEM="${LJ_CPU_MEM:-64G}" \
   "${CODE_ROOT}/scripts/lj_cpu_primoz_exec.sh" \
-  python3 "${CODE_ROOT}/scripts/recover_openfake_missing_primoz.py" --max-group 14 \
+  python3 "${CODE_ROOT}/scripts/recover_openfake_missing_primoz.py" --max-group 14 --workers 16 \
   2>&1 | tee "$LOG"
 
 echo "=== recovery done — rebuilding manifest ==="
