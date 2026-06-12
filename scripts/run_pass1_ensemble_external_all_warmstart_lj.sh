@@ -40,8 +40,9 @@ fi
 DINOV2="${DINOV2:-vit_large_patch14_dinov2.lvd142m}"
 IMAGE_SIZE="${IMAGE_SIZE:-392}"
 EPOCHS="${EPOCHS:-5}"
-BATCH_SIZE="${BATCH_SIZE:-16}"
-GRAD_ACCUM="${GRAD_ACCUM:-4}"
+BATCH_SIZE="${BATCH_SIZE:-32}"
+GRAD_ACCUM="${GRAD_ACCUM:-2}"
+NUM_WORKERS="${NUM_WORKERS:-16}"
 LR_HEAD="${LR_HEAD:-1e-4}"
 LR_LORA="${LR_LORA:-3e-5}"
 LORA_R="${LORA_R:-32}"
@@ -89,6 +90,7 @@ echo "  train       : ${TRAIN_MANIFEST}"
 echo "  val(holdout): ${VAL_MANIFEST}"
 echo "  init        : ${INIT_BOMBEK}"
 echo "  epochs      : ${EPOCHS}  lr_head=${LR_HEAD}  lr_lora=${LR_LORA}"
+echo "  num_workers : ${NUM_WORKERS}"
 echo "  eff_batch   : ${EFF}"
 echo "  output      : ${OUTPUT_DIR}"
 echo
@@ -113,6 +115,7 @@ _ARGS=(
   --val-slice "${VAL_SLICE}"
   --select-metric "${SELECT_METRIC}"
   --init-bombek "${INIT_BOMBEK}"
+  --num-workers "${NUM_WORKERS}"
   --report-to "${ENSEMBLE_REPORT_TO}"
 )
 if [[ -n "${TRAIN_SLICE:-}" ]]; then
