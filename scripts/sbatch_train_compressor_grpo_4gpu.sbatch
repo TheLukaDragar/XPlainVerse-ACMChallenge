@@ -1,5 +1,5 @@
 #!/bin/bash
-# Compressor GRPO on Frida — 4×A100, warm-start from compressor_vl SFT ckpt-10000.
+# Compressor GRPO on Frida — 4×GPU (ana A100_80GB fallback when axa in maintenance).
 #
 # Submit:
 #   sbatch scripts/sbatch_train_compressor_grpo_4gpu.sbatch
@@ -7,9 +7,10 @@
 #SBATCH --job-name=xpv-compressor-grpo
 #SBATCH --partition=frida
 #SBATCH --nodes=1
+#SBATCH --nodelist=ana
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:A100:4
+#SBATCH --gres=gpu:A100_80GB:4
 #SBATCH --cpus-per-task=96
 #SBATCH --mem=850G
 #SBATCH --time=3-00:00:00
