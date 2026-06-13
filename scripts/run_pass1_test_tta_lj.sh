@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Pass-1 ensemble on full test split with horizontal-flip TTA (2 preds per image).
 #
-# From Slurm login:
+# From Slurm login (dispatches via lj_ghcr_image_exec — do NOT wrap in apptainer twice):
 #   LJ_GPU_GRES=gpu:1 LJ_GPU_TIME=08:00:00 \
-#     ./scripts/lj_ghcr_image_exec.sh bash scripts/run_pass1_test_tta_lj.sh
-#
-# On elixir-lj-gpu-01 directly:
-#   ~/xplainverse_exec.sh bash scripts/run_pass1_test_tta_lj.sh
+#     ENS_CKPT=~/luka/runs/pass1_ensemble/.../best_ckpt/ckpt.pt \
+#     OUT_DIR=~/luka/runs/pass1_test_tta_warmstart \
+#     ./scripts/run_pass1_test_tta_lj.sh
 #
 # Env:
 #   ENS_CKPT          ensemble checkpoint (default: bombek best)
@@ -16,22 +15,17 @@
 #   BATCH_SIZE        inference batch size (default 32)
 set -euo pipefail
 
-# Always run inside Apptainer with /primoz bound (test images live on NVMe only).
+# lj_ghcr_image_exec does not forward login-node env through srun — export inside bash -c.
 if [[ -z "${_PASS1_TEST_IN_CONTAINER:-}" ]]; then
-  _HOST_PROJECT="${HOME}/luka/code/XPlainVerse-ACMChallenge"
-  _DEFAULT_REPO_LC="$(echo "${GITHUB_REPOSITORY:-TheLukaDragar/XPlainVerse-ACMChallenge}" | tr '[:upper:]' '[:lower:]')"
-  _IMAGE="${LJ_APPTAINER_IMAGE:-docker://ghcr.io/${_DEFAULT_REPO_LC}-lj:latest}"
-  _SIF="${HOME}/containers/xplainverse-acmchallenge.sif"
-  _BIND="${HOME}:${HOME},/primoz:/primoz"
-  if [[ -d "${_HOST_PROJECT}" ]]; then
-    _BIND="${_BIND},${_HOST_PROJECT}:/workspace/XPlainVerse-ACMChallenge"
-  fi
-  _INNER='export _PASS1_TEST_IN_CONTAINER=1; exec bash scripts/run_pass1_test_tta_lj.sh'
-  if [[ -f "${_SIF}" ]]; then
-    exec apptainer exec --nv -B "${_BIND}" --pwd /workspace/XPlainVerse-ACMChallenge "${_SIF}" bash -c "${_INNER}"
-  else
-    exec apptainer exec --nv -B "${_BIND}" --pwd /workspace/XPlainVerse-ACMChallenge "${_IMAGE}" bash -c "${_INNER}"
-  fi
+  export _PASS1_TEST_IN_CONTAINER=1
+  _INNER="export _PASS1_TEST_IN_CONTAINER=1 HOME=/home/jakob"
+  for _v in ENS_CKPT OUT_DIR THRESHOLD BATCH_SIZE NUM_WORKERS TEST_IMAGES_DIR MANIFEST_DIR CUDA_VISIBLE_DEVICES; do
+    if [[ -n "${!_v:-}" ]]; then
+      _INNER+=" ${_v}=$(printf '%q' "${!_v}")"
+    fi
+  done
+  _INNER+="; exec bash scripts/run_pass1_test_tta_lj.sh"
+  exec ./scripts/lj_ghcr_image_exec.sh bash -c "${_INNER}"
 fi
 
 _SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
