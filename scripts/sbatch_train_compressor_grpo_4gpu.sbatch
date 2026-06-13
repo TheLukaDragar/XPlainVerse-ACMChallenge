@@ -7,7 +7,6 @@
 #SBATCH --job-name=xpv-compressor-grpo
 #SBATCH --partition=frida
 #SBATCH --nodes=1
-#SBATCH --exclude=aga
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:A100:4
