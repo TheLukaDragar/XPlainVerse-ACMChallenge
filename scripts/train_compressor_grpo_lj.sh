@@ -33,6 +33,11 @@ else CODE_ROOT="${HOME}/luka/code/XPlainVerse-ACMChallenge"; fi
 export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
 export TORCH_COMPILE_DISABLE="${TORCH_COMPILE_DISABLE:-1}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+# Keep the host conda toolchain out of the container: vLLM/triton JIT must use
+# the system compiler, not /home/.../miniconda x86_64-conda-linux-gnu-cc.
+export PATH="/usr/local/bin:/usr/bin:/bin"
+unset CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_SHLVL CONDA_PYTHON_EXE CONDA_EXE LD_PRELOAD 2>/dev/null || true
+export CC=/usr/bin/cc CXX=/usr/bin/c++ GCC=/usr/bin/gcc TRITON_DISABLE_LINE_INFO=1
 for _cuda_lib in cu13 cu12 cu121; do
   _nv="/usr/local/lib/python3.10/dist-packages/nvidia/${_cuda_lib}/lib"
   [[ -d "${_nv}" ]] && { export LD_LIBRARY_PATH="${_nv}:${LD_LIBRARY_PATH:-}"; break; }
@@ -95,6 +100,9 @@ if [[ "${SMOKE:-0}" == "1" ]]; then
 fi
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-$(seq -s, 0 $((NPROC_PER_NODE-1)))}"
+# GRPO + vLLM colocate requires one process per GPU (no device_map). swift reads
+# NPROC_PER_NODE from the env to launch torchrun with that many processes.
+export NPROC_PER_NODE
 
 if [[ ! -f "${TRAIN_JSONL}" ]]; then
   echo "error: ${TRAIN_JSONL} missing. Run:" >&2
