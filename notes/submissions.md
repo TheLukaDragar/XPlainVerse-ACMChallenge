@@ -100,6 +100,24 @@ Detection and explanation are scored **independently** on the leaderboard.
 | `codabench-evaluator` / `codabench-id-filename` | scorer + zip builder | on main |
 | `pass1-retrain-macrof1` / `trainval-scratch` / `ensemble-giant` / `timm-fullft` | retrain experiments (flat ~0.86) | dead ends |
 
+## Experiment log — VLM-as-detector (NEGATIVE, 2026-06-13)
+
+Ran the Pass-2 VLM with the neutral "decide" prompt on all 1000 holdout images
+(`~/luka/runs/holdout_vlm_detect/`), parsed its `Verdict:` line, compared to Pass-1
+(warmstart @ 0.49) and GT:
+
+| Detector | Acc | Macro F1 | fake rate |
+|---|---:|---:|---:|
+| Pass-1 warmstart | 0.972 | 0.972 | 0.527 |
+| VLM neutral-decide | 0.772 | 0.772 | 0.413 |
+
+- Disagree 232/1000; on disagreements **Pass-1 right 216, VLM right 16**.
+- Best non-hurting ensemble = avg-prob w_p1=0.8 → macroF1 0.9738 (+0.002, noise).
+- **Conclusion: VLM is a much weaker classifier; drop the VLM-detector/ensemble idea.**
+  The `54dda78` win (VLM caught a composite Pass-1 missed) is 1 of only 16 — not representative.
+- Detection lever remains: targeted data retrain (graphic/doc fakes + low-quality reals +
+  adversarial/overlay augmentation), per the holdout error analysis.
+
 ## Next (after #6 with Det F1 0.849)
 
 Phase ends **18 June 2026 01:59 CEST**. Overall = detection + explanation; we lead complex
