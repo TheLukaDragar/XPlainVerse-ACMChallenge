@@ -83,8 +83,14 @@ MAX_STEPS="${MAX_STEPS:-}"
 SAVE_STEPS="${SAVE_STEPS:-200}"
 LOGGING_STEPS="${LOGGING_STEPS:-1}"
 ATTN_IMPL="${ATTN_IMPL:-flash_attn}"
-VLLM_GPU_UTIL="${VLLM_GPU_UTIL:-0.35}"
+VLLM_GPU_UTIL="${VLLM_GPU_UTIL:-0.6}"
 VLLM_MAX_LEN="${VLLM_MAX_LEN:-2560}"
+# Colocate on 40GB A100: vLLM + trainer share one GPU. sleep_level offloads
+# vLLM weights/cache to host during the optimisation step; offload_* frees the
+# policy during generation. Without these, KV cache has no room (cache blocks OOM).
+SLEEP_LEVEL="${SLEEP_LEVEL:-1}"
+OFFLOAD_MODEL="${OFFLOAD_MODEL:-true}"
+OFFLOAD_OPTIMIZER="${OFFLOAD_OPTIMIZER:-true}"
 SEED="${SEED:-42}"
 ADD_VERSION="${ADD_VERSION:-false}"
 
@@ -209,6 +215,9 @@ swift rlhf \
   --vllm_mode colocate \
   --vllm_gpu_memory_utilization "${VLLM_GPU_UTIL}" \
   --vllm_max_model_len "${VLLM_MAX_LEN}" \
+  --sleep_level "${SLEEP_LEVEL}" \
+  --offload_model "${OFFLOAD_MODEL}" \
+  --offload_optimizer "${OFFLOAD_OPTIMIZER}" \
   --temperature "${TEMPERATURE}" \
   --top_p "${TOP_P}" \
   --beta "${BETA}" \
