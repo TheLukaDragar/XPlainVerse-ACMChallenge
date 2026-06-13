@@ -5,10 +5,15 @@
 # HF: saberzl/SID_Set (~140 GB, train+validation only; test set not on HF)
 set -euo pipefail
 
+CODE_ROOT="${CODE_ROOT:-${HOME}/luka/code/XPlainVerse-ACMChallenge}"
 BASE="/primoz/luka/external/SID_Set"
 OLD="/home/jakob/luka/data/external/SID_Set"
 LOG_DIR="/primoz/luka/external/_logs"
 mkdir -p "${LOG_DIR}" "${BASE}"
+
+export HF_HUB_DISABLE_XET=1
+export HF_HUB_DOWNLOAD_TIMEOUT=120
+export HF_HUB_ENABLE_HF_TRANSFER=0
 
 log() { echo "[$(date -Iseconds)] $*" | tee -a "${LOG_DIR}/SID_Set.log"; }
 
@@ -17,21 +22,10 @@ if [[ -d "${OLD}" ]] && [[ "$(ls -A "${OLD}" 2>/dev/null | wc -l)" -gt 0 ]]; the
   rsync -a --info=progress2 "${OLD}/" "${BASE}/" >> "${LOG_DIR}/rsync-SID_Set.log" 2>&1 || true
 fi
 
-log "SID_Set snapshot_download -> ${BASE}"
+log "SID_Set reliable download -> ${BASE}"
 df -h /primoz | tee -a "${LOG_DIR}/SID_Set.log"
 
-python3 - <<'PY' >> "${LOG_DIR}/SID_Set.log" 2>&1
-from huggingface_hub import snapshot_download
-
-snapshot_download(
-    repo_id="saberzl/SID_Set",
-    repo_type="dataset",
-    local_dir="/primoz/luka/external/SID_Set",
-    max_workers=8,
-    resume_download=True,
-)
-print("SID_Set snapshot_download finished")
-PY
+python3 "${CODE_ROOT}/scripts/download_sid_set_recover.py" 2>&1 | tee -a "${LOG_DIR}/SID_Set.log"
 
 log "SID_Set done"
 du -sh "${BASE}" | tee -a "${LOG_DIR}/SID_Set.log"
