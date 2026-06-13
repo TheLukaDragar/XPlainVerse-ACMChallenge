@@ -8,6 +8,46 @@ Canonical locations after download:
 | GenImage | `/primoz/luka/external/GenImage/` | ~635 GB | **Complete** (ZIPs, not extracted) |
 | OpenFake | `/home/jakob/luka/data/external/OpenFake/` | ~3.4 TB | **Downloading** |
 | DRCT-2M | — | — | **Skipped** |
+| SID_Set | `/primoz/luka/external/SID_Set/` | ~140 GB | **Downloading** |
+
+---
+
+## SID_Set (`saberzl/SID_Set`)
+
+Open Images v7–anchored dataset for social-media deepfake detection (SIDA, CVPR 2025).
+
+### On disk (after download)
+```
+SID_Set/
+├── README.md
+├── config.json
+└── data/
+    ├── train-*-of-00249.parquet    # 210k rows
+    └── validation-*-of-00034.parquet  # 30k rows
+```
+
+**Test split (60k) is not on HuggingFace** — requires separate request per dataset card.
+
+### Parquet schema
+| Column | Type | Notes |
+|--------|------|-------|
+| `img_id` | string | Real IDs match Open Images v7 |
+| `image` | image bytes | Embedded JPEG/PNG |
+| `mask` | image bytes | Tampered-region mask (label=2 only) |
+| `label` | int | **0**=real, **1**=full synthetic, **2**=tampered |
+
+### Pass-1 manifest mapping
+```python
+label = "real" if row["label"] == 0 else "fake"  # merge synthetic + tampered
+# Extract bytes to disk (same pattern as OpenFake) before Pass-1 training
+```
+
+### Download
+```bash
+./scripts/run_download_sid_set_lj.sh
+# or on gpu node:
+bash scripts/download_sid_set_primoz.sh
+```
 
 ---
 
