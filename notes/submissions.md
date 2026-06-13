@@ -3,19 +3,39 @@
 Single source of truth for what we submitted, leaderboard scores, and reusable assets.
 (Leaderboard numbers come from Slack agent DMs; pipeline pred-fake from `pipeline_summary.json`.)
 
-## Leaderboard results (CodaBench, FRI team)
+## Leaderboard results (CodaBench, FRI team = theluka)
 
-| # | Operating point | Pred fake % | det macro F1 | Notes |
+Scorer: `abhijeet1317/xdd-scorer:2026-v6` (Overall = detection + explanation).
+
+| # | Operating point | Pred fake % | Detection F1 | Notes |
 |---|---|---:|---:|---|
 | 1 | `p_fake_orig @ 0.084` (deployed Bombek-arch ensemble, train-only) | 39.1% | **0.690** | first full pipeline; FRI ~#9 |
-| 2 | `p_fake_mean @ 0.11` (flip-patch, 9,148 regen) | 35.9% | **~0.698** | calibration didn't transfer; slot ~wasted |
+| 2 | `p_fake_mean @ 0.11` (flip-patch, 9,148 regen) | 35.9% | **~0.698** | calibration didn't transfer |
+| 3 | **warmstart `p_fake_mean @ 0.49`** (2M external, flip-patch 42,325 regen) | 41.2% | **0.848966** | submission 795187, 2026-06-13 16:08 — **+0.16 jump** |
 
-Explanation side was strong: complex BERT 0.690, simple 0.666, explanation_score 0.678
-(≈ #3 if ranked on explanations alone). **Detection is the bottleneck.**
+### Full board snapshot — 2026-06-13 ~16:12 CEST (Final Results)
 
-Diagnosis (notes 2026-06-07/08): val macro F1 ~0.86 but leaderboard ~0.69. Cause =
-val→test **score shift** (`p_fake_orig` mean 0.36 val vs 0.24 test) + real generalization
-gap, NOT architecture. More/better data > threshold tweaks.
+| # | Team | Overall | Det F1 | Det Acc | Complex BERT | Simple Overall | Explanation |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 1 | HIT VIRLAB (hit_xiaolun) | 0.81083 | 0.920087 | 0.92088 | 0.698534 | 0.704611 | 0.701573 |
+| 2 | xz (xuzhu) | 0.807453 | 0.881308 | 0.88253 | 0.69702 | 0.770177 | 0.733598 |
+| 3 | XJTU GenAI (xinyiyin) | 0.794198 | 0.877939 | 0.87916 | 0.692885 | 0.728029 | 0.710457 |
+| 4 | ZKRJ (gongj) | 0.78303 | 0.904072 | 0.904185 | 0.688374 | 0.635603 | 0.661988 |
+| 5 | MSUteam (artfil) | 0.774954 | 0.883572 | 0.883885 | 0.694615 | 0.638058 | 0.666336 |
+| **6** | **FRI (theluka)** | **0.771605** | **0.848966** | **0.84918** | **0.711251** | **0.677236** | **0.694243** |
+
+**Big result:** the 2M-external warmstart detector lifted Detection F1 **0.690 → 0.849 (+0.159)**,
+moving FRI from ~#9 to **#6 overall**. Confirms the old diagnosis: the gap was a real
+generalization/data problem, not architecture or threshold. More/diverse data was the lever.
+
+**Our complex BERT (0.711) is now the BEST on the board** (next: artfil 0.6946, hit 0.6985).
+Detection is still the only remaining gap: leaders are 0.88–0.92 vs our 0.849 (~0.03–0.07 behind).
+Simple Overall (0.677) is mid-pack — xz 0.770, xinyiyin 0.728 are ahead → a simple-explanation
+upgrade is the cheapest remaining explanation lever.
+
+Diagnosis (notes 2026-06-07/08, now partly resolved): val macro F1 ~0.86 but old leaderboard
+~0.69 came from val→test **score shift** + real generalization gap. The external-data retrain
+closed most of it.
 
 ## Models (holdout macro F1 = 1k unseen; leaky for pooled models)
 
@@ -80,10 +100,17 @@ Detection and explanation are scored **independently** on the leaderboard.
 | `codabench-evaluator` / `codabench-id-filename` | scorer + zip builder | on main |
 | `pass1-retrain-macrof1` / `trainval-scratch` / `ensemble-giant` / `timm-fullft` | retrain experiments (flat ~0.86) | dead ends |
 
-## Next
+## Next (after #6 with Det F1 0.849)
 
-1. Upload `submission_warmstart_flippatch_049/submission.zip` → read whether the
-   2M-external warmstart detector beats 0.690 on leaderboard (only honest test signal).
-   Explanations are consistent (flip-patched), so this also reflects explanation score fairly.
-2. If flat → stop on this detector; explanations are already competitive (~0.68).
-3. Reserve remaining CodaBench slots for a clear detection hypothesis, not threshold tweaks.
+Phase ends **18 June 2026 01:59 CEST**. Overall = detection + explanation; we lead complex
+BERT, trail on detection (~0.03–0.07) and simple.
+
+1. **Detection (biggest lever, 0.849 → ~0.88+):** leaders at 0.88–0.92. Options:
+   - threshold re-tune for the warmstart model on the leaderboard signal (we now have a real
+     test read at 0.49 → 41.2% fake; try a small sweep around it, 1 slot);
+   - finish/keep training warmstart (was still improving each epoch) or ensemble warmstart +
+     trainval-resume scores (decorrelated data mixes).
+2. **Simple explanation (cheap explanation gain):** ours 0.677 vs xz 0.770 / xinyiyin 0.728.
+   Compressor prompt/length tuning → likely +0.02–0.05 explanation with no detection risk.
+3. **Complex is already #1 (0.711)** — leave it; don't spend slots there.
+4. Reserve slots for clear hypotheses, not threshold noise.
