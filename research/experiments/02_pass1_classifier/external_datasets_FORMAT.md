@@ -8,7 +8,7 @@ Canonical locations after download:
 | GenImage | `/primoz/luka/external/GenImage/` | ~635 GB | **Complete** (ZIPs, not extracted) |
 | OpenFake | `/home/jakob/luka/data/external/OpenFake/` | ~3.4 TB | **Downloading** |
 | DRCT-2M | — | — | **Skipped** |
-| SID_Set | `/primoz/luka/external/SID_Set/` | ~140 GB | **Downloading** |
+| SID_Set | `/primoz/luka/external/SID_Set/` | ~131 GB | **Complete** — extract + manifest pending |
 
 ---
 
@@ -36,17 +36,37 @@ SID_Set/
 | `mask` | image bytes | Tampered-region mask (label=2 only) |
 | `label` | int | **0**=real, **1**=full synthetic, **2**=tampered |
 
+### Splits on HuggingFace
+| Split | Rows | In Pass-1 manifest |
+|-------|------|-------------------|
+| train | 210,000 | yes |
+| validation | 30,000 | yes |
+| test | 60,000 | **no** (not on HF) |
+
+Balanced: **80k real / 80k full_synthetic / 80k tampered**.
+
 ### Pass-1 manifest mapping
 ```python
-label = "real" if row["label"] == 0 else "fake"  # merge synthetic + tampered
-# Extract bytes to disk (same pattern as OpenFake) before Pass-1 training
+# int label -> binary Pass-1
+# 0 -> real; 1 full_synthetic + 2 tampered -> fake
+label, generator = SID_SET_LABEL_MAP[row["label"]]
+# label_int: real=0 fake=1
+image_path = f"/primoz/luka/external/SID_Set_jpeg/data/{shard_stem}/{row_idx:06d}.jpg"
+```
+
+Output: `manifests/external/manifest_sid_set_trainval.parquet`  
+Combined: `manifest_all_v2.parquet` (= all_v1 + SID_Set)
+
+### Setup (after download)
+```bash
+./scripts/setup_sid_set_lj.sh
+# audit only:
+SKIP_EXTRACT=1 MANIFEST_ONLY=1 ./scripts/setup_sid_set_lj.sh  # needs JPEGs done first
 ```
 
 ### Download
 ```bash
 ./scripts/run_download_sid_set_lj.sh
-# or on gpu node:
-bash scripts/download_sid_set_primoz.sh
 ```
 
 ---

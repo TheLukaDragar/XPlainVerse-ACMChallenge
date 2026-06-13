@@ -9,6 +9,8 @@ Outputs under manifests/external/:
 
   manifest_openfake_jpeg_0-14.parquet  (JPEG paths on /primoz after extract)
   manifest_all_v1.parquet              (XP pooled + OpenFake JPEG + DFBench train)
+  manifest_sid_set_trainval.parquet    (SID_Set train+val JPEG paths)
+  manifest_all_v2.parquet              (all_v1 + SID_Set)
 
 Run full prep (extract + manifests):
   ./scripts/prepare_external_training_lj.sh
@@ -37,6 +39,15 @@ OPENFAKE_ROOT = Path(os.environ.get("OPENFAKE_ROOT", "/home/jakob/luka/data/exte
 OPENFAKE_JPEG_ROOT = Path(os.environ.get("OPENFAKE_JPEG_ROOT", "/primoz/luka/external/OpenFake_jpeg"))
 DFBENCH_ROOT = Path(os.environ.get("DFBENCH_ROOT", "/primoz/luka/external/DFBench"))
 GENIMAGE_ROOT = Path(os.environ.get("GENIMAGE_ROOT", "/primoz/luka/external/GenImage"))
+SID_SET_ROOT = Path(os.environ.get("SID_SET_ROOT", "/primoz/luka/external/SID_Set"))
+SID_SET_JPEG_ROOT = Path(os.environ.get("SID_SET_JPEG_ROOT", "/primoz/luka/external/SID_Set_jpeg"))
+
+# SID_Set int labels: 0=real, 1=full_synthetic, 2=tampered
+SID_SET_LABEL_MAP: dict[int, tuple[str, str]] = {
+    0: ("real", "real"),
+    1: ("fake", "full_synthetic"),
+    2: ("fake", "tampered"),
+}
 
 
 def repo_root() -> Path:
@@ -239,6 +250,64 @@ def genimage_extracted_roots() -> list[Path]:
     return roots
 
 
+def sid_set_shards() -> list[tuple[str, Path]]:
+    data = SID_SET_ROOT / "data"
+    if not data.is_dir():
+        raise FileNotFoundError(f"SID_Set data dir missing: {data}")
+    out: list[tuple[str, Path]] = []
+    for split in ("train", "validation"):
+        pattern = "train-*.parquet" if split == "train" else "validation-*.parquet"
+        for shard in sorted(data.glob(pattern)):
+            if shard.stat().st_size > 1024:
+                out.append((split, shard))
+    return out
+
+
+def build_sid_set_jpeg(require_exists: bool = False) -> pd.DataFrame:
+    shards = sid_set_shards()
+    if not shards:
+        raise RuntimeError(f"no SID_Set shards under {SID_SET_ROOT}/data")
+
+    rows: list[dict] = []
+    missing = 0
+    for split, shard in shards:
+        rel = shard.relative_to(SID_SET_ROOT)
+        jpeg_dir = SID_SET_JPEG_ROOT / rel.parent / shard.stem
+        table = pq.read_table(shard, columns=["label", "img_id"])
+        labels = table.column("label").to_pylist()
+        img_ids = table.column("img_id").to_pylist()
+        for i, (lab, img_id) in enumerate(zip(labels, img_ids)):
+            lab_int = int(lab)
+            if lab_int not in SID_SET_LABEL_MAP:
+                continue
+            label, generator = SID_SET_LABEL_MAP[lab_int]
+            image_path = str(jpeg_dir / f"{i:06d}.jpg")
+            exists = Path(image_path).is_file() and Path(image_path).stat().st_size > 64
+            if not exists:
+                missing += 1
+                if require_exists:
+                    continue
+            sid = f"sidset_{split}_{img_id}"
+            rows.append({
+                "sample_id": sid,
+                "image_path": image_path,
+                "label": label,
+                "label_int": LABEL2INT[label],
+                "source": "sid_set",
+                "generator": generator,
+                "split": split,
+                "sid_label": lab_int,
+                "file_exists": exists,
+            })
+
+    df = pd.DataFrame(rows)
+    print(
+        f"sid_set train+val: {len(df)} rows; class counts: {df.label.value_counts().to_dict()}; "
+        f"generator counts: {df.generator.value_counts().to_dict()}; files_missing={missing}"
+    )
+    return df
+
+
 def build_genimage() -> pd.DataFrame:
     roots = genimage_extracted_roots()
     if not roots:
@@ -358,11 +427,39 @@ def build_all_v1(xplainverse_pooled: Path, seed: int = 0, require_exists: bool =
     return all_df
 
 
+def _load_sid_set_manifest(require_exists: bool) -> pd.DataFrame:
+    cached = out_dir() / "manifest_sid_set_trainval.parquet"
+    if SID_SET_ROOT.is_dir() and (SID_SET_ROOT / "data").is_dir():
+        return build_sid_set_jpeg(require_exists=require_exists)
+    if cached.is_file():
+        df = pd.read_parquet(cached)
+        if require_exists and "file_exists" in df.columns:
+            df = df[df.file_exists].copy()
+        print(f"sid_set: loaded cached manifest ({len(df)} rows)")
+        return df
+    raise FileNotFoundError(f"SID_Set missing under {SID_SET_ROOT} and no cached {cached}")
+
+
+def build_all_v2(xplainverse_pooled: Path, seed: int = 0, require_exists: bool = True) -> pd.DataFrame:
+    """all_v1 + SID_Set train+val."""
+    all_v1 = build_all_v1(xplainverse_pooled, seed=seed, require_exists=require_exists)
+    sid = _load_sid_set_manifest(require_exists)
+    if not len(sid):
+        return all_v1
+    sid = sid.drop(columns=["file_exists"], errors="ignore")
+    combined = pd.concat([all_v1, sid], ignore_index=True).sample(frac=1, random_state=seed).reset_index(drop=True)
+    print(f"all_v2 total: {len(combined)} rows; class counts: {combined.label.value_counts().to_dict()}")
+    return combined
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build external dataset manifests for Pass-1")
     parser.add_argument(
         "--only",
-        choices=["openfake", "openfake_jpeg", "dfbench", "genimage", "mix", "all_v1", "all"],
+        choices=[
+            "openfake", "openfake_jpeg", "dfbench", "genimage", "sid_set",
+            "mix", "all_v1", "all_v2", "all",
+        ],
         default="all_v1",
     )
     parser.add_argument("--require-exists", action="store_true", default=False)
@@ -406,6 +503,12 @@ def main() -> None:
             df.to_parquet(path)
             print(f"wrote {path}")
 
+    if args.only in {"sid_set", "all"}:
+        df = build_sid_set_jpeg(require_exists=req)
+        path = od / "manifest_sid_set_trainval.parquet"
+        df.to_parquet(path)
+        print(f"wrote {path}")
+
     if args.only in {"mix", "all"}:
         if not args.xplainverse_pooled.is_file():
             print(f"skip mix: missing {args.xplainverse_pooled}")
@@ -420,6 +523,14 @@ def main() -> None:
             raise FileNotFoundError(args.xplainverse_pooled)
         df = build_all_v1(args.xplainverse_pooled, require_exists=req)
         path = od / "manifest_all_v1.parquet"
+        df.to_parquet(path)
+        print(f"wrote {path}")
+
+    if args.only in {"all_v2", "all"}:
+        if not args.xplainverse_pooled.is_file():
+            raise FileNotFoundError(args.xplainverse_pooled)
+        df = build_all_v2(args.xplainverse_pooled, require_exists=req)
+        path = od / "manifest_all_v2.parquet"
         df.to_parquet(path)
         print(f"wrote {path}")
 
