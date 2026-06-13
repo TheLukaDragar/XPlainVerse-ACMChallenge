@@ -47,7 +47,14 @@ test pred-fake 41.2%. See `~/luka/runs/pass1_calibration/warmstart_holdout_*.jso
 |---|---|---:|---|---|
 | `submission_calibrated_mean011_20260608-105939` | mean @ 0.11 | 35.9% | yes | submitted (#2) |
 | `submission_newmodel_full` | newmodel mean @ 0.375 | 39.5% | yes | not uploaded |
-| `submission_warmstart_detonly_049` | **warmstart mean @ 0.49** | 41.2% | yes | **ready, hold for go** |
+| `submission_warmstart_flippatch_049` | **warmstart mean @ 0.49** | 41.2% | yes | **READY — consistent explanations, upload this** |
+| `submission_warmstart_detonly_049` | warmstart mean @ 0.49 | 41.2% | zip removed | DO NOT USE — stale explanations on 40k flipped rows |
+
+### `submission_warmstart_flippatch_049` (correct warmstart build)
+Pass-1 (warmstart mean @ 0.49) → Pass-2 complex on 42,325 flipped rows → compressor
+simple on the 23,269 new fakes → merged with 157,675 unchanged explanations → zip.
+Validated: 200k rows each file, 0 real simple≠complex, 0 fake simple==complex, 0 empty.
+Built via `run_calibrated_resubmit_lj.sh` with cross-model flip detection (`--base-complex`).
 
 ## Pass-2 fast strategy
 
@@ -75,8 +82,8 @@ Detection and explanation are scored **independently** on the leaderboard.
 
 ## Next
 
-1. Upload `submission_warmstart_detonly_049/submission.zip` → read whether 2M-external
-   warmstart detector beats 0.690 on leaderboard (the only honest test signal we have).
-2. If it improves detection → flip-patch Pass-2 for the ~42k flipped rows (consistent
-   explanations) and resubmit a clean version.
-3. If flat → stop on this detector; explanations are already competitive.
+1. Upload `submission_warmstart_flippatch_049/submission.zip` → read whether the
+   2M-external warmstart detector beats 0.690 on leaderboard (only honest test signal).
+   Explanations are consistent (flip-patched), so this also reflects explanation score fairly.
+2. If flat → stop on this detector; explanations are already competitive (~0.68).
+3. Reserve remaining CodaBench slots for a clear detection hypothesis, not threshold tweaks.
