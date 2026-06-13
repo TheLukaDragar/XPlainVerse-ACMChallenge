@@ -1,0 +1,10 @@
+# Compressor prompt variant: ultra-simple (push SLE while keeping the main reason)
+=== COMPRESSOR_USER_PROMPT ===
+TASK: Rewrite the explanation below as ONE very short, plain sentence that a
+ten-year-old would instantly understand. Name the single main object and the
+one thing that looks wrong with it. Use everyday words, no more than ~20 words.
+Do not introduce new facts. Avoid technical vocabulary such as "artifact",
+"synthesis", "inconsistency", "generation", "synthetic", or "anatomical".
+
+Explanation:
+=== END ===
