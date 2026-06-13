@@ -1,5 +1,5 @@
 #!/bin/bash
-# Compressor GRPO on Frida — 4×GPU (ana A100_80GB fallback when axa in maintenance).
+# Compressor GRPO on Frida — 4×A100 on axa (fastest free node; 40GB).
 #
 # Submit:
 #   sbatch scripts/sbatch_train_compressor_grpo_4gpu.sbatch
@@ -7,13 +7,15 @@
 #SBATCH --job-name=xpv-compressor-grpo
 #SBATCH --partition=frida
 #SBATCH --nodes=1
-#SBATCH --nodelist=ana
+#SBATCH --nodelist=axa
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:A100_80GB:4
+#SBATCH --gres=gpu:A100:4
 #SBATCH --cpus-per-task=96
 #SBATCH --mem=850G
-#SBATCH --time=3-00:00:00
+# 48h fits before the Jun 15 23:00 maintenance reservation so the job starts now.
+# Checkpoints every 200 steps; resume after maintenance for the rest.
+#SBATCH --time=48:00:00
 #SBATCH --output=/shared/workspace/lrv/luka/XPlainVerse-ACMChallenge/runs/slurm_compressor_grpo_%j.out
 #SBATCH --error=/shared/workspace/lrv/luka/XPlainVerse-ACMChallenge/runs/slurm_compressor_grpo_%j.err
 
