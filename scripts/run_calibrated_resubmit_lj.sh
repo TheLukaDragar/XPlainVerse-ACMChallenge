@@ -16,11 +16,11 @@ set -euo pipefail
 if [[ -z "${_CALIBRATED_IN_CONTAINER:-}" ]]; then
   export _CALIBRATED_IN_CONTAINER=1
   _INNER="export _CALIBRATED_IN_CONTAINER=1 HOME=/home/jakob"
-  [[ -n "${OUT_DIR:-}" ]] && _INNER+=" OUT_DIR=$(printf '%q' "${OUT_DIR}")"
-  [[ -n "${START_STEP:-}" ]] && _INNER+=" START_STEP=$(printf '%q' "${START_STEP}")"
-  [[ -n "${RUN_COMPRESSOR_INFER:-}" ]] && _INNER+=" RUN_COMPRESSOR_INFER=$(printf '%q' "${RUN_COMPRESSOR_INFER}")"
-  [[ -n "${OLD_COMPLEX:-}" ]] && _INNER+=" OLD_COMPLEX=$(printf '%q' "${OLD_COMPLEX}")"
-  [[ -n "${OLD_COMPRESSOR_INFER:-}" ]] && _INNER+=" OLD_COMPRESSOR_INFER=$(printf '%q' "${OLD_COMPRESSOR_INFER}")"
+  for _v in OUT_DIR START_STEP RUN_COMPRESSOR_INFER OLD_COMPLEX OLD_COMPRESSOR_INFER \
+            TEST_TTA TEST_MANIFEST NEW_SCORE_COL NEW_THRESHOLD BASE_COMPLEX \
+            PASS2_ADAPTERS COMPRESSOR_ADAPTERS SHARD_COUNT; do
+    if [[ -n "${!_v:-}" ]]; then _INNER+=" ${_v}=$(printf '%q' "${!_v}")"; fi
+  done
   _INNER+="; exec bash scripts/run_calibrated_resubmit_lj.sh"
   exec ./scripts/lj_ghcr_image_exec.sh bash -c "${_INNER}"
 fi
@@ -74,14 +74,19 @@ COMPRESSOR_MERGED="${OUT_DIR}/compressor_infer_merged.jsonl"
 SUBMISSION_JSONL="${OUT_DIR}/submission.jsonl"
 SUBMISSION_ZIP="${OUT_DIR}/submission.zip"
 
+# Cross-model safe: flips are computed vs the labels the base explanations were
+# conditioned on (BASE_COMPLEX, defaults to OLD_COMPLEX). Required when TEST_TTA
+# comes from a different Pass-1 model than the one that produced OLD_COMPLEX.
+BASE_COMPLEX="${BASE_COMPLEX:-${OLD_COMPLEX}}"
 if [[ "${START_STEP}" -le 1 ]]; then
-  echo "=== [1/6] Recut Pass-1 + flip manifest ==="
+  echo "=== [1/6] Recut Pass-1 + flip manifest (flips vs base explanations' labels) ==="
   python3 "${EVAL_DIR}/prepare_recalibrated_pass1.py" \
     --test-tta "${TEST_TTA}" \
     --test-manifest "${FULL_TEST_MANIFEST}" \
     --out-dir "${OUT_DIR}" \
     --new-score-col "${NEW_SCORE_COL}" \
-    --new-threshold "${NEW_THRESHOLD}"
+    --new-threshold "${NEW_THRESHOLD}" \
+    --base-complex "${BASE_COMPLEX}"
 fi
 
 N_FLIPS="$(python3 -c "import json; print(json.load(open('${OUT_DIR}/recalibration_summary.json'))['n_flips'])")"

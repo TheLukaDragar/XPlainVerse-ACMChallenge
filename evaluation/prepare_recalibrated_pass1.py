@@ -18,11 +18,41 @@ def main() -> int:
     ap.add_argument("--new-threshold", type=float, default=0.11)
     ap.add_argument("--old-score-col", default="p_fake_orig")
     ap.add_argument("--old-threshold", type=float, default=0.0838903859257698)
+    ap.add_argument(
+        "--base-complex",
+        type=Path,
+        default=None,
+        help="Existing complex_explanations.jsonl whose labels the base explanations were "
+        "conditioned on. When set, flips are computed vs THESE labels (cross-model safe), "
+        "not old-score-col/threshold. Use this when the base explanations came from a "
+        "different Pass-1 model than --test-tta.",
+    )
     args = ap.parse_args()
 
     df = pd.read_parquet(args.test_tta)
-    old_pred = (df[args.old_score_col].astype(float) >= args.old_threshold).astype(int)
+    df["sample_id"] = df["sample_id"].astype(str)
     new_pred = (df[args.new_score_col].astype(float) >= args.new_threshold).astype(int)
+
+    if args.base_complex is not None:
+        base_label: dict[str, int] = {}
+        with args.base_complex.open(encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                sid = str(row.get("sample_id") or row.get("id"))
+                lbl = str(row.get("label", "")).strip().lower()
+                base_label[sid] = 1 if lbl == "fake" else 0
+        missing = [sid for sid in df["sample_id"] if sid not in base_label]
+        if missing:
+            raise SystemExit(
+                f"{len(missing)} sample_ids in --test-tta missing from --base-complex "
+                f"(e.g. {missing[:3]}); base explanations must cover all test rows."
+            )
+        old_pred = df["sample_id"].map(base_label).astype(int)
+    else:
+        old_pred = (df[args.old_score_col].astype(float) >= args.old_threshold).astype(int)
 
     out = df.copy()
     out["p_fake"] = out[args.new_score_col].astype(float)
