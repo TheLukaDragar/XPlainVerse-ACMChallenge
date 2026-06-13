@@ -9,7 +9,7 @@
 | Manifest | Rows (approx) | Ready to train? |
 |----------|---------------|-----------------|
 | `manifest_openfake_core_0-14.parquet` | ~1.1M | Yes (parquet loader needed) |
-| `manifest_dfbench_train.parquet` | ~436k | **No** — ZIPs not extracted yet |
+| `manifest_dfbench_train.parquet` | ~436k | **Yes** — `/primoz/.../DFBench/DFBench/` extracted |
 | `manifest_genimage_train.parquet` | — | **No** — ZIPs not extracted |
 | `manifest_external_mix_v1.parquet` | XP + capped fakes | After DFBench unzip + loader |
 

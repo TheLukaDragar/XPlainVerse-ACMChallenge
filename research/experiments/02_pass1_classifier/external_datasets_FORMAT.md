@@ -4,7 +4,7 @@ Canonical locations after download:
 
 | Dataset | Path | Size (full) | Status |
 |---------|------|-------------|--------|
-| DFBench | `/primoz/luka/external/DFBench/` | ~133 GB | **Complete** |
+| DFBench | `/primoz/luka/external/DFBench/` | ~133 GB | **Complete** — extracted + manifest |
 | GenImage | `/primoz/luka/external/GenImage/` | ~635 GB | **Complete** (ZIPs, not extracted) |
 | OpenFake | `/home/jakob/luka/data/external/OpenFake/` | ~3.4 TB | **Downloading** |
 | DRCT-2M | — | — | **Skipped** |
@@ -213,3 +213,12 @@ Native size still matters for compression/quality artifacts even after resize.
 1. Verify shard count: 644 files total under `core/` + `reddit/`
 2. Build per-dataset manifest builders → unified `image_path, label, source, sample_id`
 3. Decide mix ratio with XPlainVerse pooled manifest (start small, fakes only from external)
+
+### DFBench setup (done)
+
+```bash
+./scripts/setup_dfbench_lj.sh --repair   # if LIVE / ali_flux_schnell need re-extract
+./scripts/setup_dfbench_lj.sh            # full extract + manifest
+```
+
+Output: `manifests/external/manifest_dfbench_train.parquet` (~436k rows, 121 skipped — macOS `._` junk + 1 missing PixArt).
