@@ -2,6 +2,7 @@
 """Extract DFBench ZIP archives to DFBench/<source>/ paths expected by img_train.jsonl."""
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import time
@@ -14,12 +15,13 @@ DEST = ROOT / "DFBench"
 # (zip filename, jsonl source folder, mode)
 # flat: numbered jpgs at zip root -> DFBench/<source>/
 # nested: deep tree -> flatten by basename into DFBench/<source>/
+# nested_subpath: keep path after /<source>/ (e.g. LIVE/jp2k/img111.jpg)
 # prefix: strip top folder (edit/, partial_source/) -> DFBench/<source>/
 SPECS: list[tuple[str, str, str]] = [
     ("CLIVE.zip", "CLIVE", "nested"),
     ("CSIQ.zip", "CSIQ", "nested"),
     ("Flick8kimg.zip", "Flick8k", "nested"),
-    ("LIVE.zip", "LIVE", "nested"),
+    ("LIVE.zip", "LIVE", "nested_subpath"),
     ("TID2013.zip", "TID2013", "nested"),
     ("kadid10k.zip", "kadid10k", "nested"),
     ("koniq10k_512x384.zip", "koniq10k", "nested"),
@@ -31,7 +33,7 @@ SPECS: list[tuple[str, str, str]] = [
     ("PixArt_000001-040000.zip", "PixArt", "flat"),
     ("Playground_000001-040000.zip", "Playground", "flat"),
     ("ali_flux_dev_000001-040000.zip", "ali_flux_dev", "flat"),
-    ("ali_flux_schnell_000001-040000.zip", "ali_flux_schnell", "flat"),
+    ("ali_flux_schnell_000001-040000.zip", "ali_flux_schnell", "nested"),
     ("edit.zip", "edit", "prefix"),
     ("infinity_000001-040000.zip", "infinity", "flat"),
     ("partial_source.zip", "partial_source", "prefix"),
@@ -54,11 +56,14 @@ def extract_member(zf: zipfile.ZipFile, member: str, out: Path) -> None:
     tmp.replace(out)
 
 
-def extract_zip(zip_path: Path, source: str, mode: str) -> int:
+def extract_zip(zip_path: Path, source: str, mode: str, *, clean: bool = False) -> int:
     dest_dir = DEST / source
+    if clean and dest_dir.exists():
+        shutil.rmtree(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     n = 0
     prefix = f"{source}/"
+    subpath_needle = f"/{source}/"
     with zipfile.ZipFile(zip_path) as zf:
         for member in zf.namelist():
             if member.endswith("/"):
@@ -67,25 +72,50 @@ def extract_zip(zip_path: Path, source: str, mode: str) -> int:
             if mode == "prefix":
                 if not member.startswith(prefix):
                     continue
+                rel = member[len(prefix):]
+                out = dest_dir / rel
             elif mode == "flat":
                 if "/" in member.rstrip("/"):
                     continue
-            out = dest_dir / name
+                out = dest_dir / name
+            elif mode == "nested_subpath":
+                if subpath_needle not in member:
+                    continue
+                rel = member.split(subpath_needle, 1)[1]
+                out = dest_dir / rel
+            else:
+                out = dest_dir / name
             extract_member(zf, member, out)
             n += 1
     return n
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Extract DFBench ZIP archives to DFBench/<source>/")
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="SOURCE",
+        help="Re-extract only these source folders (e.g. LIVE ali_flux_schnell)",
+    )
+    args = parser.parse_args()
+
+    specs = SPECS
+    if args.only:
+        only = set(args.only)
+        specs = [s for s in SPECS if s[1] in only]
+        if not specs:
+            raise SystemExit(f"no matching sources in --only {args.only}")
+
     DEST.mkdir(parents=True, exist_ok=True)
     log(f"DFBench extract -> {DEST}")
     total = 0
-    for zip_name, source, mode in SPECS:
+    for zip_name, source, mode in specs:
         zip_path = ROOT / zip_name
         if not zip_path.is_file():
             raise FileNotFoundError(zip_path)
         log(f"  {zip_name} -> DFBench/{source}/ ({mode})")
-        n = extract_zip(zip_path, source, mode)
+        n = extract_zip(zip_path, source, mode, clean=bool(args.only))
         total += n
         log(f"    wrote {n} files")
     log(f"done — {total} files under {DEST}")

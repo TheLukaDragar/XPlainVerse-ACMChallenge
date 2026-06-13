@@ -60,6 +60,18 @@ def load_jsonl(path: Path):
                 yield json.loads(line)
 
 
+def resolve_dfbench_image_path(rel: str) -> tuple[str, bool]:
+    image_path = DFBENCH_ROOT / rel
+    if image_path.is_file():
+        return str(image_path), True
+    # jsonl references LIVE/*.bmp but archives ship .jpg under subfolders.
+    if rel.endswith(".bmp"):
+        alt = DFBENCH_ROOT / f"{rel[:-4]}.jpg"
+        if alt.is_file():
+            return str(alt), True
+    return str(image_path), False
+
+
 def parse_dfbench_label(row: dict) -> str | None:
     for turn in row.get("conversations", []):
         if turn.get("from") != "gpt":
@@ -184,8 +196,7 @@ def build_dfbench(split: str = "train", require_exists: bool = False) -> pd.Data
         if label is None or not rel:
             continue
         # jsonl paths look like DFBench/Kolors/000002.jpg
-        image_path = str(DFBENCH_ROOT / rel)
-        exists = Path(image_path).is_file()
+        image_path, exists = resolve_dfbench_image_path(rel)
         if not exists:
             missing += 1
             if require_exists:
