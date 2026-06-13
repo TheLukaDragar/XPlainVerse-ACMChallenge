@@ -151,7 +151,7 @@ swift rlhf \
   --model_type "${MODEL_TYPE}" \
   --use_hf "${USE_HF}" \
   "${ADAPTER_FLAG[@]}" \
-  --train_type lora \
+  --tuner_type lora \
   --torch_dtype bfloat16 \
   --attn_impl "${ATTN_IMPL}" \
   --dataset "${TRAIN_DATASET}" \
