@@ -153,7 +153,13 @@ def build_openfake(max_group: int = 14) -> pd.DataFrame:
     return df
 
 
-def build_openfake_jpeg(max_group: int = 14, require_exists: bool = False) -> pd.DataFrame:
+def _openfake_max_group() -> int:
+    return int(os.environ.get("OPENFAKE_MAX_GROUP", "14"))
+
+
+def build_openfake_jpeg(max_group: int | None = None, require_exists: bool = False) -> pd.DataFrame:
+    if max_group is None:
+        max_group = _openfake_max_group()
     shards = openfake_shards(max_group)
     if not shards:
         raise RuntimeError(f"no OpenFake shards found under {OPENFAKE_ROOT}/core (groups 0-{max_group})")
@@ -380,13 +386,14 @@ def build_mix_v1(
 
 
 def _load_openfake_jpeg_manifest(require_exists: bool) -> pd.DataFrame:
-    cached = out_dir() / "manifest_openfake_jpeg_0-14.parquet"
+    maxg = _openfake_max_group()
+    cached = out_dir() / f"manifest_openfake_jpeg_0-{maxg}.parquet"
     if cached.is_file() and require_exists:
         df = pd.read_parquet(cached)
         if "file_exists" in df.columns:
             df = df[df.file_exists].copy()
         return df
-    return build_openfake_jpeg(require_exists=require_exists)
+    return build_openfake_jpeg(max_group=maxg, require_exists=require_exists)
 
 
 def _load_dfbench_manifest(require_exists: bool) -> pd.DataFrame:
