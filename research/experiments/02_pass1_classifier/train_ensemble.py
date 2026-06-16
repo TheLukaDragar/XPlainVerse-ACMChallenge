@@ -236,7 +236,15 @@ def train(args: argparse.Namespace) -> None:
     siglip_processor = AutoProcessor.from_pretrained(args.siglip)
 
     dinov2_tf = dinov2_transform(args.image_size)
-    train_aug = QualityAgnosticAugment() if args.augment else None
+    if args.augment:
+        train_aug = QualityAgnosticAugment(
+            p_jpeg=float(os.environ.get("AUG_P_JPEG", "0.5")),
+            p_blur=float(os.environ.get("AUG_P_BLUR", "0.3")),
+            p_noise=float(os.environ.get("AUG_P_NOISE", "0.3")),
+            p_resize=float(os.environ.get("AUG_P_RESIZE", "0.3")),
+        )
+    else:
+        train_aug = None
 
     model = create_model_with_lora(
         args.siglip,
