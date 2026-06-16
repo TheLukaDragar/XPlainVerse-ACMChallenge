@@ -69,6 +69,9 @@ class DINOv3MAC(nn.Module):
     ):
         super().__init__()
         self.backbone = timm.create_model(model_name, pretrained=pretrained, num_classes=0)
+        # Freeze the backbone; only LoRA adapters (added later) + MAC heads train.
+        for p in self.backbone.parameters():
+            p.requires_grad = False
         self.layers = list(layers)
         self.deep_supervision = deep_supervision
         c = self.backbone.embed_dim
