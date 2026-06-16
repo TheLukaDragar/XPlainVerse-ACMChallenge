@@ -299,7 +299,7 @@ def train(args: argparse.Namespace) -> None:
     if main:
         (out_dir / "metrics.json").write_text(json.dumps(epoch_logs, indent=2))
         print(f"\nfinished — best val {args.select_metric} {best_score:.4f}")
-    finish_wandb(wb)
+    finish_wandb(wb, {f"best_val_{args.select_metric}": best_score, "epochs": args.epochs}, rank)
     cleanup_distributed(is_distributed)
 
 
