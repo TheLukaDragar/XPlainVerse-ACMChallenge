@@ -131,9 +131,10 @@ def save_best(out_dir, model, run_args, metrics, y_true, y_score, ids):
 
 
 def deep_supervision_loss(logits, labels, loss_fn):
+    # DINO-MAC: loss(final) + (loss(l0)+loss(l1)+loss(l2))/4  (aux divided by #layers).
     if isinstance(logits, list):
         final = loss_fn(logits[-1], labels)
-        aux = sum(loss_fn(lg, labels) for lg in logits[:-1]) / max(1, len(logits) - 1)
+        aux = sum(loss_fn(lg, labels) for lg in logits[:-1]) / len(logits)
         return final + aux
     return loss_fn(logits, labels)
 

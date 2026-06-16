@@ -41,6 +41,10 @@ DFBENCH_ROOT = Path(os.environ.get("DFBENCH_ROOT", "/primoz/luka/external/DFBenc
 GENIMAGE_ROOT = Path(os.environ.get("GENIMAGE_ROOT", "/primoz/luka/external/GenImage"))
 SID_SET_ROOT = Path(os.environ.get("SID_SET_ROOT", "/primoz/luka/external/SID_Set"))
 SID_SET_JPEG_ROOT = Path(os.environ.get("SID_SET_JPEG_ROOT", "/primoz/luka/external/SID_Set_jpeg"))
+NTIRE_ROOT = Path(os.environ.get("NTIRE_AIGEN_ROOT", "/primoz/luka/external/NTIRE_AIGen"))
+
+# NTIRE-RobustAIGenDetection labels.csv: 0=real, 1=generated.
+NTIRE_LABEL_MAP: dict[int, str] = {0: "real", 1: "fake"}
 
 # SID_Set int labels: 0=real, 1=full_synthetic, 2=tampered
 SID_SET_LABEL_MAP: dict[int, tuple[str, str]] = {
@@ -314,6 +318,88 @@ def build_sid_set_jpeg(require_exists: bool = False) -> pd.DataFrame:
     return df
 
 
+def build_ntire(require_exists: bool = False) -> pd.DataFrame:
+    """NTIRE 2026 Robust AI-Gen Detection train: shard_*/images/*.jpg + labels.csv."""
+    if not NTIRE_ROOT.is_dir():
+        raise FileNotFoundError(f"NTIRE root missing: {NTIRE_ROOT}")
+    shard_dirs = sorted(d for d in NTIRE_ROOT.glob("shard_*") if d.is_dir())
+    if not shard_dirs:
+        raise RuntimeError(f"no shard_* dirs under {NTIRE_ROOT}")
+    rows: list[dict] = []
+    missing = 0
+    for sd in shard_dirs:
+        csv = sd / "labels.csv"
+        if not csv.is_file():
+            print(f"  ntire skip {sd.name}: no labels.csv")
+            continue
+        df = pd.read_csv(csv)
+        cols = {c.lower(): c for c in df.columns}
+        name_col = cols.get("image_name") or df.columns[-2]
+        label_col = cols.get("label") or df.columns[-1]
+        names = df[name_col].astype(str).tolist()
+        labs = df[label_col].astype(int).tolist()
+        img_dir = sd / "images"
+        for name, lab_int in zip(names, labs):
+            if lab_int not in NTIRE_LABEL_MAP:
+                continue
+            label = NTIRE_LABEL_MAP[lab_int]
+            image_path = str(img_dir / name)
+            exists = Path(image_path).is_file() and Path(image_path).stat().st_size > 64
+            if not exists:
+                missing += 1
+                if require_exists:
+                    continue
+            rows.append({
+                "sample_id": f"ntire_{sd.name}_{Path(name).stem}",
+                "image_path": image_path,
+                "label": label,
+                "label_int": LABEL2INT[label],
+                "source": "ntire",
+                "generator": "real" if label == "real" else "aigen",
+                "split": "train",
+                "file_exists": exists,
+            })
+    out = pd.DataFrame(rows)
+    print(
+        f"ntire: {len(out)} rows; class counts: {out.label.value_counts().to_dict()}; "
+        f"files_missing={missing}"
+    )
+    return out
+
+
+def _load_ntire_manifest(require_exists: bool) -> pd.DataFrame:
+    cached = out_dir() / "manifest_ntire_train.parquet"
+    if NTIRE_ROOT.is_dir() and any(NTIRE_ROOT.glob("shard_*")):
+        return build_ntire(require_exists=require_exists)
+    if cached.is_file():
+        df = pd.read_parquet(cached)
+        if require_exists and "file_exists" in df.columns:
+            df = df[df.file_exists].copy()
+        print(f"ntire: loaded cached manifest ({len(df)} rows)")
+        return df
+    raise FileNotFoundError(f"NTIRE missing under {NTIRE_ROOT} and no cached {cached}")
+
+
+def build_all_v4(seed: int = 0, require_exists: bool = True) -> pd.DataFrame:
+    """all_v3 (cached) + NTIRE in-the-wild train. Reuses the existing all_v3 parquet."""
+    all_v3_path = out_dir() / "manifest_all_v3.parquet"
+    if not all_v3_path.is_file():
+        raise FileNotFoundError(f"all_v3 manifest missing: {all_v3_path} (build all_v2 with OPENFAKE_MAX_GROUP=23 first)")
+    base = pd.read_parquet(all_v3_path)
+    print(f"all_v4 base (all_v3): {len(base)} rows")
+    ntire = _load_ntire_manifest(require_exists)
+    ntire = ntire.drop(columns=["file_exists"], errors="ignore")
+    # align columns
+    for col in base.columns:
+        if col not in ntire.columns:
+            ntire[col] = base[col].iloc[0] if col in ("split",) else None
+    ntire = ntire[[c for c in base.columns if c in ntire.columns]]
+    combined = pd.concat([base, ntire], ignore_index=True).sample(frac=1, random_state=seed).reset_index(drop=True)
+    print(f"all_v4 total: {len(combined)} rows; class counts: {combined.label.value_counts().to_dict()}; "
+          f"source counts: {combined.source.value_counts().to_dict()}")
+    return combined
+
+
 def build_genimage() -> pd.DataFrame:
     roots = genimage_extracted_roots()
     if not roots:
@@ -464,8 +550,8 @@ def main() -> None:
     parser.add_argument(
         "--only",
         choices=[
-            "openfake", "openfake_jpeg", "dfbench", "genimage", "sid_set",
-            "mix", "all_v1", "all_v2", "all",
+            "openfake", "openfake_jpeg", "dfbench", "genimage", "sid_set", "ntire",
+            "mix", "all_v1", "all_v2", "all_v4", "all",
         ],
         default="all_v1",
     )
@@ -516,6 +602,12 @@ def main() -> None:
         df.to_parquet(path)
         print(f"wrote {path}")
 
+    if args.only in {"ntire", "all", "all_v4"}:
+        df = build_ntire(require_exists=req)
+        path = od / "manifest_ntire_train.parquet"
+        df.to_parquet(path)
+        print(f"wrote {path}")
+
     if args.only in {"mix", "all"}:
         if not args.xplainverse_pooled.is_file():
             print(f"skip mix: missing {args.xplainverse_pooled}")
@@ -538,6 +630,12 @@ def main() -> None:
             raise FileNotFoundError(args.xplainverse_pooled)
         df = build_all_v2(args.xplainverse_pooled, require_exists=req)
         path = od / "manifest_all_v2.parquet"
+        df.to_parquet(path)
+        print(f"wrote {path}")
+
+    if args.only in {"all_v4"}:
+        df = build_all_v4(require_exists=req)
+        path = od / "manifest_all_v4.parquet"
         df.to_parquet(path)
         print(f"wrote {path}")
 
