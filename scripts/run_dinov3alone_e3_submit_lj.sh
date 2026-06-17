@@ -29,9 +29,9 @@ echo
 
 if [[ "${START_STEP}" -le 1 ]]; then
   echo "=== [1/2] DINOv3 test TTA (GHCR image, ~20 min) ==="
-  CKPT="${CKPT}" OUT="${OUT_TTA}" \
-    bash "${CODE_ROOT}/scripts/lj_ghcr_image_exec.sh" \
-    bash "${CODE_ROOT}/scripts/run_dinov3_test_tta_lj.sh"
+  bash "${CODE_ROOT}/scripts/lj_ghcr_image_exec.sh" bash -c \
+    "$(printf 'CKPT=%q OUT=%q bash %q/scripts/run_dinov3_test_tta_lj.sh' \
+      "${CKPT}" "${OUT_TTA}" "${CODE_ROOT}")"
 fi
 
 if [[ ! -f "${OUT_TTA}/predictions.parquet" ]]; then
