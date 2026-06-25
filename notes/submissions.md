@@ -151,7 +151,8 @@ Detection and explanation are scored **independently** on the leaderboard.
 
 | Branch | Purpose | Status |
 |---|---|---|
-| `external-manifest-mix` | 2M external data, warmstart train, test/holdout TTA, calibration, det-only submit | **active** |
+| `cursor/dinov3-alone-e3-a544` | DINOv3 e3 test TTA + flip-patch submit script | **final challenge push** |
+| `cursor/dinov3-ensemble-a544` | DINOv3-MAC + fused detection | merged work |
 | `pass1-trainval-resume-e2-4` | XP-only resume → 0.972 holdout | done |
 | `pass1-test-tta` | original test TTA (broken wrapper) | superseded |
 | `pass1-calibrate-macrof1` | val/test threshold sweep | merged into work |
