@@ -47,22 +47,17 @@ def needs_extract(out: Path) -> bool:
 
 
 def indices_to_recover(out_dir: Path, n_rows: int, force: bool) -> list[int] | None:
-    """Return indices needing work, or None if shard is fully OK (fast skip, no parquet read)."""
+    """Return indices needing work, or None if shard looks complete (fast skip, no parquet read)."""
     if force:
         return list(range(n_rows))
 
-    missing: list[int] = []
-    broken: list[int] = []
-    for i in range(n_rows):
-        out = out_dir / f"{i:06d}.jpg"
-        if not out.is_file() or out.stat().st_size < 64:
-            missing.append(i)
-        elif needs_extract(out):
-            broken.append(i)
-
-    if not missing and not broken:
+    missing = [
+        i for i in range(n_rows)
+        if not (out_dir / f"{i:06d}.jpg").is_file() or (out_dir / f"{i:06d}.jpg").stat().st_size < 64
+    ]
+    if not missing:
         return None
-    return sorted(set(missing + broken))
+    return missing
 
 
 def recover_shard(shard: Path, force: bool) -> tuple[str, int, int, int, int]:
