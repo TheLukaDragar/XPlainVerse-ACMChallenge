@@ -179,7 +179,7 @@ def main() -> None:
             col_metrics["score_mean"] = float(wide_df[score_col].astype(float).mean())
             by_score_col[score_col] = col_metrics
 
-        metrics = by_score_col["p_fake_mean"]
+        metrics = dict(by_score_col["p_fake_mean"])
         thr = metrics["thr_best_f1"]
         wide_df["pred_label_mean"] = (wide_df["p_fake_mean"] >= thr).astype(int)
         metrics["pred_fake_rate_at_thr"] = float(wide_df["pred_label_mean"].mean())

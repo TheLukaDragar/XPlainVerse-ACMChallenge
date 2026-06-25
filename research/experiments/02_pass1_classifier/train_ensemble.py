@@ -102,6 +102,20 @@ class FocalLoss(nn.Module):
         return (alpha_t * (1.0 - p_t).pow(self.gamma) * bce).mean()
 
 
+def _best_macro_threshold(y_true: np.ndarray, y_score: np.ndarray) -> tuple[float, float]:
+    """Sweep a threshold grid and return (threshold, macro_f1) maximizing macro F1."""
+    grid = np.linspace(0.01, 0.99, 197)
+    best_thr, best_macro = 0.5, -1.0
+    for thr in grid:
+        pred = (y_score >= thr).astype(int)
+        fake_f1 = f1_score(y_true, pred, pos_label=1, zero_division=0)
+        real_f1 = f1_score(y_true, pred, pos_label=0, zero_division=0)
+        macro = 0.5 * (fake_f1 + real_f1)
+        if macro > best_macro:
+            best_macro, best_thr = macro, float(thr)
+    return best_thr, best_macro
+
+
 @torch.no_grad()
 def run_validation(model: EnsembleAIDetector, loader: DataLoader, device: str) -> tuple[dict, np.ndarray, np.ndarray, list[str]]:
     model.eval()
@@ -129,6 +143,11 @@ def run_validation(model: EnsembleAIDetector, loader: DataLoader, device: str) -
     pred_default = (y_score >= 0.5).astype(int)
     pred_best = (y_score >= threshold_best).astype(int)
 
+    # macro-F1-optimal threshold: sweep a grid and maximize 0.5*(fake_F1 + real_F1).
+    # This is the quantity Task-1 cares about, unlike the fake-only F1 threshold above.
+    thr_macro, macro_best = _best_macro_threshold(y_true, y_score)
+    pred_macro = (y_score >= thr_macro).astype(int)
+
     metrics = {
         "auc": float(roc_auc_score(y_true, y_score)),
         "ap": float(average_precision_score(y_true, y_score)),
@@ -138,6 +157,13 @@ def run_validation(model: EnsembleAIDetector, loader: DataLoader, device: str) -
         "real_acc_at_best": float(accuracy_score(y_true[y_true == 0], pred_best[y_true == 0])),
         "fake_acc_at_best": float(accuracy_score(y_true[y_true == 1], pred_best[y_true == 1])),
         "f1_fake_at_best": float(f1_score(y_true, pred_best, pos_label=1)),
+        # macro-F1-optimal operating point (used for --select-metric macro_f1)
+        "thr_best_macro_f1": float(thr_macro),
+        "macro_f1_at_best": float(macro_best),
+        "real_f1_at_best": float(f1_score(y_true, pred_macro, pos_label=0)),
+        "fake_f1_at_macro": float(f1_score(y_true, pred_macro, pos_label=1)),
+        "real_acc_at_macro": float(accuracy_score(y_true[y_true == 0], pred_macro[y_true == 0])),
+        "fake_acc_at_macro": float(accuracy_score(y_true[y_true == 1], pred_macro[y_true == 1])),
     }
     return metrics, y_true, y_score, sample_ids
 
@@ -210,7 +236,15 @@ def train(args: argparse.Namespace) -> None:
     siglip_processor = AutoProcessor.from_pretrained(args.siglip)
 
     dinov2_tf = dinov2_transform(args.image_size)
-    train_aug = QualityAgnosticAugment() if args.augment else None
+    if args.augment:
+        train_aug = QualityAgnosticAugment(
+            p_jpeg=float(os.environ.get("AUG_P_JPEG", "0.5")),
+            p_blur=float(os.environ.get("AUG_P_BLUR", "0.3")),
+            p_noise=float(os.environ.get("AUG_P_NOISE", "0.3")),
+            p_resize=float(os.environ.get("AUG_P_RESIZE", "0.3")),
+        )
+    else:
+        train_aug = None
 
     model = create_model_with_lora(
         args.siglip,
@@ -277,7 +311,8 @@ def train(args: argparse.Namespace) -> None:
     )
     loss_fn = FocalLoss(gamma=args.focal_gamma, alpha=args.focal_alpha)
 
-    best_auc = -1.0
+    select_metric = getattr(args, "select_metric", "auc")
+    best_score = -1.0
     epoch_logs: list[dict] = []
     global_step = 0
 
@@ -331,11 +366,13 @@ def train(args: argparse.Namespace) -> None:
             print(f"\n=== val epoch {epoch} ===")
             print(json.dumps(metrics, indent=2))
             wandb_log(wb, {f"val/{k}": v for k, v in metrics.items() if k != "epoch"}, global_step)
-            if metrics["auc"] > best_auc:
-                best_auc = metrics["auc"]
+            score_key = "macro_f1_at_best" if select_metric == "macro_f1" else "auc"
+            current = metrics[score_key]
+            if current > best_score:
+                best_score = current
                 save_best_checkpoint(out_dir, unwrap_model(model), run_args, metrics, y_true, y_score, sample_ids)
-                print(f"  saved best checkpoint (AUC {best_auc:.4f})")
-                wandb_log(wb, {"val/best_auc": best_auc}, global_step)
+                print(f"  saved best checkpoint ({score_key} {best_score:.4f})")
+                wandb_log(wb, {f"val/best_{score_key}": best_score}, global_step)
 
         if is_distributed:
             import torch.distributed as dist
@@ -344,8 +381,8 @@ def train(args: argparse.Namespace) -> None:
 
     if main:
         (out_dir / "metrics.json").write_text(json.dumps(epoch_logs, indent=2))
-        print(f"\nfinished — best val AUC {best_auc:.4f}")
-    finish_wandb(wb, {"best_val_auc": best_auc, "epochs": args.epochs}, rank)
+        print(f"\nfinished — best val {select_metric} {best_score:.4f}")
+    finish_wandb(wb, {f"best_val_{select_metric}": best_score, "epochs": args.epochs}, rank)
     cleanup_distributed(is_distributed)
 
 
@@ -377,6 +414,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--train-slice", type=int, default=0)
     parser.add_argument("--val-slice", type=int, default=0)
+    parser.add_argument(
+        "--select-metric",
+        default="auc",
+        choices=("auc", "macro_f1"),
+        help="val metric for best-checkpoint selection (macro_f1 = Task-1 objective)",
+    )
     parser.add_argument("--log-every", type=int, default=50)
     parser.add_argument("--report-to", default=os.environ.get("REPORT_TO", "wandb"), choices=("wandb", "none"))
     parser.add_argument("--lora", type=int, default=1, help=argparse.SUPPRESS)

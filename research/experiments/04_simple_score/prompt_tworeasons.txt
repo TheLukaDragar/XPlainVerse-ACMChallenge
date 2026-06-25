@@ -1,0 +1,11 @@
+# Compressor prompt variant: two-reason (test BERT recall vs SLE tradeoff)
+=== COMPRESSOR_USER_PROMPT ===
+TASK: Rewrite the explanation below in plain everyday language so a non-expert
+immediately understands why the image looks fake. Use two short sentences, no
+more than ~45 words. Mention the two most important objects and what looks
+wrong with each. Do not introduce new facts. Avoid technical vocabulary such as
+"artifact", "synthesis", "inconsistency", "generation", "synthetic", or
+"anatomical".
+
+Explanation:
+=== END ===
