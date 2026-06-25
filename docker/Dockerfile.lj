@@ -13,6 +13,8 @@
 #
 # Run on Lj (NOT ~/xplainverse_exec.sh — that SIF has no timm):
 #   ./scripts/lj_ghcr_image_exec.sh bash scripts/run_pass1_ensemble_bombek_lj.sh
+#
+# A100 (sm_80) is supported by the cu130 torch + flash_attn 2.8.3 wheel below.
 
 FROM nvidia/cuda:13.0.0-devel-ubuntu22.04
 
@@ -39,6 +41,7 @@ COPY evaluation/env/xplainverse_eval_env.txt ./xplainverse_eval_env.txt
 RUN grep -vE '^(torch|torchvision|torchaudio)(==|$)' xplainverse_eval_env.txt > /tmp/req_no_torch.txt \
     && pip install -r /tmp/req_no_torch.txt
 
+# --- ms-swift (training + GRPO) ---
 ARG MS_SWIFT_REF=main
 WORKDIR /opt/ms-swift
 RUN git clone https://github.com/modelscope/ms-swift.git /opt/ms-swift \
@@ -63,6 +66,8 @@ RUN pip install scikit-learn peft pandas pyarrow "timm>=1.0.15" \
 RUN pip install bert_score
 
 # Flash Attention 2 — prebuilt wheel matching torch from vLLM (cu130 / torch 2.11).
+# If the torch line changes, pick a matching wheel from
+# https://github.com/mjun0812/flash-attention-prebuild-wheels/releases
 ARG FLASH_ATTN_RELEASE=v0.9.4
 ARG FLASH_ATTN_WHEEL=flash_attn-2.8.3+cu130torch2.11-cp310-cp310-linux_x86_64.whl
 RUN pip install "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${FLASH_ATTN_RELEASE}/${FLASH_ATTN_WHEEL}" \
