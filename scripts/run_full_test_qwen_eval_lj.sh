@@ -12,14 +12,15 @@ set -euo pipefail
 
 if [[ -z "${_QWEN_EVAL_IN_CONTAINER:-}" ]]; then
   export _QWEN_EVAL_IN_CONTAINER=1
-  _INNER="export _QWEN_EVAL_IN_CONTAINER=1 HOME=${HOME}"
+  export LJ_APPTAINER_IMAGE="${LJ_APPTAINER_IMAGE:-docker://ghcr.io/thelukadragar/xplainverse-acmchallenge:latest}"
+  _INNER="export _QWEN_EVAL_IN_CONTAINER=1 HOME=${HOME} LJ_APPTAINER_IMAGE=$(printf '%q' "${LJ_APPTAINER_IMAGE}")"
   for _v in OUT_DIR SUBMISSION UPSTREAM_EVAL QWEN_MODEL NUM_GPUS QWEN_BATCH BERT_BATCH SLE_BATCH; do
     if [[ -n "${!_v:-}" ]]; then
       _INNER+=" ${_v}=$(printf '%q' "${!_v}")"
     fi
   done
   _INNER+="; exec bash scripts/run_full_test_qwen_eval_lj.sh"
-  exec ./scripts/lj_ghcr_image_exec.sh bash -c "${_INNER}"
+  exec env LJ_APPTAINER_IMAGE="${LJ_APPTAINER_IMAGE}" ./scripts/lj_ghcr_image_exec.sh bash -c "${_INNER}"
 fi
 
 _SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
