@@ -10,7 +10,7 @@
 #     ./scripts/lj_ghcr_image_exec.sh bash scripts/run_full_test_qwen_eval_lj.sh
 set -euo pipefail
 
-if [[ -z "${_QWEN_EVAL_IN_CONTAINER:-}" ]]; then
+if [[ -z "${_QWEN_EVAL_IN_CONTAINER:-}" && ! -d /.singularity.d && ! -f /.dockerenv ]]; then
   export _QWEN_EVAL_IN_CONTAINER=1
   export LJ_APPTAINER_IMAGE="${LJ_APPTAINER_IMAGE:-docker://ghcr.io/thelukadragar/xplainverse-acmchallenge:latest}"
   _INNER="export _QWEN_EVAL_IN_CONTAINER=1 HOME=${HOME} LJ_APPTAINER_IMAGE=$(printf '%q' "${LJ_APPTAINER_IMAGE}")"
