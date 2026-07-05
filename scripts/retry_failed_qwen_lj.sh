@@ -79,8 +79,16 @@ _vllm_ready() {
 
 _run_shard_retry() {
   local shard="$1"
-  local port=$((VLLM_BASE_PORT + shard))
+  local port="${VLLM_BASE_PORT}"  # always 8000 — one GPU, sequential shards
   local shard_out="${OUT_DIR}/shard_${shard}"
+
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k -TERM "${port}/tcp" 2>/dev/null || true
+    sleep 3
+    fuser -k -KILL "${port}/tcp" 2>/dev/null || true
+  fi
+  sleep 10
+
   write_status "shard ${shard}: starting vLLM port=${port}"
   (
     export CUDA_VISIBLE_DEVICES=0
@@ -124,7 +132,20 @@ _run_shard_retry() {
 
   kill "${vllm_pid}" 2>/dev/null || true
   wait "${vllm_pid}" 2>/dev/null || true
-  sleep 5
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k -TERM "${port}/tcp" 2>/dev/null || true
+    sleep 3
+    fuser -k -KILL "${port}/tcp" 2>/dev/null || true
+  fi
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    for _ in $(seq 1 120); do
+      used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -i 0 2>/dev/null | tr -d ' ')
+      [[ -z "${used}" || "${used}" -le 2048 ]] && break
+      sleep 2
+    done
+  else
+    sleep 15
+  fi
   write_status "shard ${shard}: retry DONE"
 }
 
