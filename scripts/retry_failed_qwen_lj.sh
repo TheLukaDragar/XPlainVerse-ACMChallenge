@@ -168,10 +168,14 @@ for SHARD in ${SHARDS}; do
   done
 done
 
-write_status "patching per_sample from cache"
-python3 "${CODE_ROOT}/scripts/patch_per_sample_from_cache.py" --out-dir "${OUT_DIR}"
-
 write_status "re-merge full 200k scores"
+REMAINING=$(python3 -c "import json; print(json.load(open('${FAIL_JSON}'))['count'])")
+if [[ "${REMAINING}" -gt 0 ]]; then
+  write_status "WARN: ${REMAINING} Qwen failures remain — filling pred->gt with 0.0 (model JSON loop)"
+  python3 "${CODE_ROOT}/scripts/fill_qwen_failures_zero.py" --out-dir "${OUT_DIR}" | tee -a "${LOG}"
+fi
+
+python3 "${CODE_ROOT}/scripts/patch_per_sample_from_cache.py" --out-dir "${OUT_DIR}"
 python3 "${CODE_ROOT}/scripts/merge_qwen_shards.py" \
   --shard-dirs $(seq -f "${OUT_DIR}/shard_%g" 0 3) \
   --output "${OUT_DIR}/final_scores.json" \
