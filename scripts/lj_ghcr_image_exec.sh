@@ -39,8 +39,9 @@ fi
 run_inner() {
   cd "${PROJECT_DIR}"
   export PYTHONNOUSERSITE=1
+  APPTAINER_BIN="${APPTAINER_BIN:-/usr/bin/apptainer}"
   # --no-home --cleanenv: host ~/.local torch/numpy must not shadow container cu130 stack.
-  exec apptainer exec --nv --no-home --cleanenv \
+  exec "${APPTAINER_BIN}" exec --nv --no-home --cleanenv \
     -B "${APPTAINER_BIND}" \
     --env PYTHONNOUSERSITE=1 \
     "${LJ_APPTAINER_IMAGE}" \
@@ -70,7 +71,7 @@ if [[ -n "${APPTAINER_DOCKER_PASSWORD:-}" ]]; then
   _AUTH_EXPORT+="export APPTAINER_DOCKER_PASSWORD=$(printf '%q' "${APPTAINER_DOCKER_PASSWORD}"); "
 fi
 
-INNER="${_AUTH_EXPORT}export PYTHONNOUSERSITE=1; cd $(printf '%q' "${PROJECT_DIR}") && exec apptainer exec --nv --no-home --cleanenv --env PYTHONNOUSERSITE=1 -B $(printf '%q' "${APPTAINER_BIND}") $(printf '%q' "${LJ_APPTAINER_IMAGE}")"
+INNER="${_AUTH_EXPORT}export PYTHONNOUSERSITE=1 APPTAINER_BIN=/usr/bin/apptainer; cd $(printf '%q' "${PROJECT_DIR}") && exec /usr/bin/apptainer exec --nv --no-home --cleanenv --env PYTHONNOUSERSITE=1 -B $(printf '%q' "${APPTAINER_BIND}") $(printf '%q' "${LJ_APPTAINER_IMAGE}")"
 for _a in "$@"; do
   INNER+=" $(printf '%q' "${_a}")"
 done

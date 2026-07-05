@@ -109,6 +109,80 @@ def _extract_message_text(message):
     return str(content)
 
 
+def _vllm_batch_chat_completion(
+    model,
+    system_prompt,
+    user_prompts,
+    base_url,
+    api_key,
+    temperature,
+    max_tokens,
+    timeout,
+):
+    prompts = list(user_prompts)
+    if not prompts:
+        return []
+
+    url = base_url.rstrip("/") + "/chat/completions/batch"
+    payload = {
+        "model": model,
+        "messages": [
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+            for user_prompt in prompts
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + get_api_key(api_key),
+    }
+    request = Request(url, data=body, headers=headers, method="POST")
+
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            response_text = response.read().decode("utf-8")
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            "vLLM batch chat completion failed with HTTP status {0}: {1}".format(
+                exc.code, detail
+            )
+        )
+    except URLError as exc:
+        raise RuntimeError(
+            "Failed to reach the vLLM batch endpoint at {0}: {1}".format(url, exc)
+        )
+
+    payload = json.loads(response_text)
+    choices = payload.get("choices") or []
+    if len(choices) != len(prompts):
+        raise RuntimeError(
+            "vLLM batch chat completion returned {0} choices for {1} prompts.".format(
+                len(choices), len(prompts)
+            )
+        )
+
+    by_index = {}
+    for choice in choices:
+        index = choice.get("index")
+        if index is None:
+            raise RuntimeError("vLLM batch chat completion choice missing index.")
+        message = choice.get("message") or {}
+        by_index[int(index)] = _extract_message_text(message).strip()
+
+    missing = [idx for idx in range(len(prompts)) if idx not in by_index]
+    if missing:
+        raise RuntimeError(
+            "vLLM batch chat completion missing choice indices: {0}".format(missing)
+        )
+    return [by_index[idx] for idx in range(len(prompts))]
+
+
 def chat_completion(
     backend,
     model,
@@ -140,6 +214,18 @@ def chat_completion(
             cache_dir=cache_dir,
             enable_thinking=enable_thinking,
         )
+
+    if backend == "vllm":
+        return _vllm_batch_chat_completion(
+            model=model,
+            system_prompt=system_prompt,
+            user_prompts=[user_prompt],
+            base_url=base_url,
+            api_key=api_key,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+        )[0]
 
     if backend != "openai_compatible":
         raise ValueError("Unsupported inference backend: {0}".format(backend))
@@ -221,6 +307,18 @@ def chat_completion_batch(
             attn_implementation=attn_implementation,
             cache_dir=cache_dir,
             enable_thinking=enable_thinking,
+        )
+
+    if backend == "vllm":
+        return _vllm_batch_chat_completion(
+            model=model,
+            system_prompt=system_prompt,
+            user_prompts=prompts,
+            base_url=base_url,
+            api_key=api_key,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
         )
 
     return [
