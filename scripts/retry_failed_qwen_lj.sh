@@ -21,6 +21,9 @@ QWEN_BATCH="${QWEN_BATCH:-16}"
 VLLM_BASE_PORT="${VLLM_BASE_PORT:-8000}"
 GPU_MEMORY_UTIL="${GPU_MEMORY_UTIL:-0.75}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"
+EXTRACTION_MAX_TOKENS="${EXTRACTION_MAX_TOKENS:-2048}"
+COVERAGE_MAX_TOKENS="${COVERAGE_MAX_TOKENS:-2048}"
+MAX_RETRY_ATTEMPTS="${MAX_RETRY_ATTEMPTS:-3}"
 LOG="${LOG:-${OUT_DIR}/qwen_retry.log}"
 STATUS="${STATUS:-${OUT_DIR}/qwen_retry_status.txt}"
 
@@ -125,6 +128,8 @@ _run_shard_retry() {
       --base-url "http://127.0.0.1:${port}/v1" \
       --model-name "${QWEN_MODEL}" \
       --qwen-batch-size "${QWEN_BATCH}" \
+      --extraction-max-tokens "${EXTRACTION_MAX_TOKENS}" \
+      --coverage-max-tokens "${COVERAGE_MAX_TOKENS}" \
       --skip-bert-sle \
       --no-preload-models \
       >> "${LOG}" 2>&1
@@ -150,7 +155,17 @@ _run_shard_retry() {
 }
 
 for SHARD in ${SHARDS}; do
-  _run_shard_retry "${SHARD}" || exit 1
+  attempt=1
+  while [[ "${attempt}" -le "${MAX_RETRY_ATTEMPTS}" ]]; do
+    write_status "shard ${SHARD}: attempt ${attempt}/${MAX_RETRY_ATTEMPTS}"
+    _run_shard_retry "${SHARD}" || exit 1
+    FAIL_JSON="${OUT_DIR}/qwen_failures.json"
+    python3 "${CODE_ROOT}/scripts/find_qwen_failures.py" --out-dir "${OUT_DIR}" --output "${FAIL_JSON}"
+    REMAIN=$(python3 -c "import json; d=json.load(open('${FAIL_JSON}')); print(sum(1 for s in d['samples'] if s['shard']==${SHARD}))")
+    write_status "shard ${SHARD}: ${REMAIN} failures remaining"
+    [[ "${REMAIN}" -eq 0 ]] && break
+    attempt=$((attempt + 1))
+  done
 done
 
 write_status "patching per_sample from cache"
